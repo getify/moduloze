@@ -2,5 +2,10 @@
 	"name": "moduloze",
 	"description": "Convert CommonJS (CJS) modules to UMD and ESM formats",
 	"version": "0.0.1",
-	"main": "index.js"
+	"main": "index.js",
+	"dependencies": {
+		"@babel/traverse": "~7.2.3",
+		"@babel/types": "~7.3.0",
+		"babylon": "~6.18.0"
+	}
 }
