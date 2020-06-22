@@ -9,6 +9,9 @@ var exportStatements = new Set();
 var requireCalls = new WeakMap();
 var exportAssignments = new WeakMap();
 
+var convertImports = [];
+var convertExports = [];
+
 var visitors = {
 	CallExpression: {
 		exit(path) {
@@ -142,11 +145,11 @@ exports.t22 = t22();
 function build(code) {
 	var ast = babylon.parse(code);
 	traverse(ast,visitors);
-	processRequires();
-	processExports();
+	analyzeRequires();
+	analyzeExports();
 }
 
-function processRequires() {
+function analyzeRequires() {
 	for (let stmt of requireStatements) {
 		let stmtReqCalls = requireCalls.get(stmt);
 
@@ -159,12 +162,18 @@ function processRequires() {
 		) {
 			let call = stmt.node.expression;
 			let specifier = call.arguments[0].extra.raw;
-			console.log(`import ${ specifier };`);
+
+			// console.log(`import ${ specifier };`);
+			convertImports.push({
+				esmType "bare-import",
+				specifier,
+				path: stmt,
+			});
 			continue;
 		}
 		// var/let/const declaration statement?
 		else if (T.isVariableDeclaration(stmt.node)) {
-			for (let decl of stmt.node.declarations) {
+			for (let [declIdx,decl,] of stmt.node.declarations.entries()) {
 				// normal identifier declaration? var x = ..
 				if (T.isIdentifier(decl.id)) {
 					// call as initialization assignment? var x = require("..")
@@ -174,12 +183,23 @@ function processRequires() {
 					) {
 						let call = decl.init;
 						let specifier = call.arguments[0].extra.raw;
-						console.log(`import * as ${ decl.id.name } from ${ specifier };`);
-						console.log(`import ${ decl.id.name } from ${ specifier };`);
+
+						// console.log(`import * as ${ decl.id.name } from ${ specifier };`);
+						// console.log(`import ${ decl.id.name } from ${ specifier };`);
+						convertImports.push({
+							esmType "default-import",
+							binding: decl.id.name,
+							specifier,
+							path: stmt,
+							context: {
+								declaration: decl,
+								declarationIdx: declIdx,
+							},
+						});
 						continue;
 					}
 					else if (
-						// require("..") part of a simple member expression?
+						// require("..") is part of a simple member expression?
 						T.isMemberExpression(decl.init) &&
 						stmtReqCalls.find(p => p.node == decl.init.object) &&
 						(
@@ -201,7 +221,18 @@ function processRequires() {
 							undefined;
 						if (source) {
 							let binding = (target == source) ? target : `${source} as ${target}`;
-							console.log(`import { ${ binding } } from ${ specifier };`);
+
+							// console.log(`import { ${ binding } } from ${ specifier };`);
+							convertImports.push({
+								esmType "named-import",
+								binding,
+								specifier,
+								path: stmt,
+								context: {
+									declaration: decl,
+									declarationIdx: declIdx,
+								},
+							});
 							continue;
 						}
 					}
@@ -229,7 +260,18 @@ function processRequires() {
 							let specifier = call.arguments[0].extra.raw;
 							let target = pattern.properties[0].value.name;
 							let binding = (target == source) ? target : `${source} as ${target}`;
-							console.log(`import { ${ binding } } from ${ specifier };`);
+
+							// console.log(`import { ${ binding } } from ${ specifier };`);
+							convertImports.push({
+								esmType "named-import",
+								binding,
+								specifier,
+								path: stmt,
+								context: {
+									declaration: decl,
+									declarationIdx: declIdx,
+								},
+							});
 							continue;
 						}
 					}
@@ -255,9 +297,18 @@ function processRequires() {
 					let call = assignment.right;
 					let specifier = call.arguments[0].extra.raw;
 					let target = assignment.left.name;
-					let target$1 = target + "$1";
-					console.log(`import * as ${ target$1 } from ${ specifier }; ${ target } = ${ target$1 };`);
-					console.log(`import ${ target$1 } from ${ specifier }; ${ target } = ${ target$1 };`);
+
+					// let target$1 = target + "$1";
+					// console.log(`import * as ${ target$1 } from ${ specifier }; ${ target } = ${ target$1 };`);
+					// console.log(`import ${ target$1 } from ${ specifier }; ${ target } = ${ target$1 };`);
+					convertImports.push({
+						esmType "default-import-indirect",
+						binding: {
+							target,
+						},
+						specifier,
+						path: stmt,
+					});
 					continue;
 				}
 				else if (
@@ -276,7 +327,6 @@ function processRequires() {
 					let call = assignment.right.object;
 					let specifier = call.arguments[0].extra.raw;
 					let target = assignment.left.name;
-					let target$1 = target + "$1";
 					let source =
 						T.isIdentifier(assignment.right.property) ?
 							assignment.right.property.name :
@@ -284,8 +334,18 @@ function processRequires() {
 							assignment.right.property.value :
 						undefined;
 					if (source) {
-						let binding = `${ source } as ${ target$1 }`;
-						console.log(`import { ${ binding } } from ${ specifier }; ${ target } = ${ target$1 };`);
+						// let target$1 = target + "$1";
+						// let binding = `${ source } as ${ target$1 }`;
+						// console.log(`import { ${ binding } } from ${ specifier }; ${ target } = ${ target$1 };`);
+						convertImports.push({
+							esmType "named-import-indirect",
+							binding: {
+								source,
+								target,
+							},
+							specifier,
+							path: stmt,
+						});
 						continue;
 					}
 				}
@@ -311,9 +371,19 @@ function processRequires() {
 						let call = assignment.right;
 						let specifier = call.arguments[0].extra.raw;
 						let target = pattern.properties[0].value.name;
-						let target$1 = target + "$1";
-						let binding = `${source} as ${target$1}`;
-						console.log(`import { ${ binding } } from ${ specifier }; ${ target } = ${ target$1 };`);
+
+						// let target$1 = target + "$1";
+						// let binding = `${source} as ${target$1}`;
+						// console.log(`import { ${ binding } } from ${ specifier }; ${ target } = ${ target$1 };`);
+						convertImports.push({
+							esmType "named-import-indirect",
+							binding: {
+								source,
+								target,
+							},
+							specifier,
+							path: stmt,
+						});
 						continue;
 					}
 				}
@@ -325,7 +395,7 @@ function processRequires() {
 	}
 }
 
-function processExports() {
+function analyzeExports() {
 	for (let stmt of exportStatements) {
 		let stmtExpAssignments = exportAssignments.get(stmt);
 
@@ -352,17 +422,32 @@ function processExports() {
 
 					// exporting a primitive/literal value?
 					if (expVal) {
-						console.log(`export default ${ expVal };`);
+						// console.log(`export default ${ expVal };`);
+						convertExports.push({
+							esmType "default-export-simple",
+							source: expVal,
+							path: stmt,
+						});
 						continue;
 					}
 					// exporting an identifier?
 					else if (T.isIdentifier(source)) {
-						console.log(`export default ${ source.name };`);
+						// console.log(`export default ${ source.name };`);
+						convertExports.push({
+							esmType "default-export-simple",
+							source: source.name,
+							path: stmt,
+						});
 						continue;
 					}
 					// exporting any other value/expression
 					else {
-						console.log("export default ..;");
+						// console.log("export default ..;");
+						convertExports.push({
+							esmType "default-export",
+							source,
+							path: stmt,
+						});
 						continue;
 					}
 				}
@@ -386,29 +471,55 @@ function processExports() {
 
 					// exporting a primitive/literal value?
 					if (expVal) {
-						console.log(`export var ${ exportName } = ${ expVal };`);
+						// console.log(`export var ${ exportName } = ${ expVal };`);
+						convertExports.push({
+							esmType "named-declaration-export-simple",
+							binding: exportName,
+							source: expVal,
+							path: stmt,
+						});
 						continue;
 					}
 					// exporting an identifier?
 					else if (T.isIdentifier(source)) {
 						if (source.name == exportName) {
-							console.log(`export { ${ source.name } };`);
+							// console.log(`export { ${ source.name } };`);
+							convertExports.push({
+								esmType "named-export",
+								binding: exportName,
+								source: expVal,
+								path: stmt,
+							});
 							continue;
 						}
 						else {
-							console.log(`export { ${ source.name } as ${ exportName } };`);
+							// console.log(`export { ${ source.name } as ${ exportName } };`);
+							convertExports.push({
+								esmType "named-export",
+								binding: {
+									source: source.name,
+									target: exportName,
+								},
+								source: expVal,
+								path: stmt,
+							});
 							continue;
 						}
 					}
 					// exporting any other value/expression
 					else {
-						console.log(`export var ${ exportName } = ..;`);
+						// console.log(`export var ${ exportName } = ..;`);
+						convertExports.push({
+							esmType "named-declaration-export",
+							binding: exportName,
+							source: expVal,
+							path: stmt,
+						});
 						continue;
 					}
 				}
 			}
 		}
-
 
 		// if we get here, the exports/module.exports wasn't of a supported form
 		console.error("Unsupported: exports expression not ESM export-compatible");
