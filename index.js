@@ -165,9 +165,11 @@ function analyzeRequires() {
 
 			// console.log(`import ${ specifier };`);
 			convertImports.push({
-				esmType "bare-import",
+				esmType: "bare-import",
 				specifier,
-				path: stmt,
+				context: {
+					statement: stmt,
+				},
 			});
 			continue;
 		}
@@ -187,11 +189,11 @@ function analyzeRequires() {
 						// console.log(`import * as ${ decl.id.name } from ${ specifier };`);
 						// console.log(`import ${ decl.id.name } from ${ specifier };`);
 						convertImports.push({
-							esmType "default-import",
+							esmType: "default-import",
 							binding: decl.id.name,
 							specifier,
-							path: stmt,
 							context: {
+								statement: stmt,
 								declaration: decl,
 								declarationIdx: declIdx,
 							},
@@ -220,21 +222,26 @@ function analyzeRequires() {
 								decl.init.property.value :
 							undefined;
 						if (source) {
-							let binding = (target == source) ? target : `${source} as ${target}`;
-
 							// console.log(`import { ${ binding } } from ${ specifier };`);
 							convertImports.push({
-								esmType "named-import",
-								binding,
+								esmType: "named-import",
+								binding: {
+									source,
+									target,
+								},
 								specifier,
-								path: stmt,
 								context: {
+									statement: stmt,
 									declaration: decl,
 									declarationIdx: declIdx,
 								},
 							});
 							continue;
 						}
+					}
+					// otherwise, a variable declaration without a `require(..)` in it
+					else {
+						continue;
 					}
 				}
 				// destructuring assignment? var { x } = require("..")
@@ -243,42 +250,51 @@ function analyzeRequires() {
 					T.isCallExpression(decl.init) &&
 					stmtReqCalls.find(p => p.node == decl.init)
 				) {
+					let call = decl.init;
+					let specifier = call.arguments[0].extra.raw;
 					let pattern = decl.id;
-					// simple, single destructuring pattern?
-					if (
-						pattern.properties.length == 1 &&
-						!pattern.properties[0].computed &&
-						T.isIdentifier(pattern.properties[0].value)
-					) {
-						let targetProp = pattern.properties[0];
-						let source =
-							T.isIdentifier(targetProp.key) ? targetProp.key.name :
-							T.isStringLiteral(targetProp.key) ? targetProp.key.value :
-							undefined;
-						if (source) {
-							let call = decl.init;
-							let specifier = call.arguments[0].extra.raw;
-							let target = pattern.properties[0].value.name;
-							let binding = (target == source) ? target : `${source} as ${target}`;
-
-							// console.log(`import { ${ binding } } from ${ specifier };`);
-							convertImports.push({
-								esmType "named-import",
-								binding,
-								specifier,
-								path: stmt,
-								context: {
-									declaration: decl,
-									declarationIdx: declIdx,
-								},
-							});
-							continue;
+					let bindings = [];
+					for (let targetProp of pattern.properties) {
+						// simple destructuring target?
+						if (
+							!targetProp.computed &&
+							T.isIdentifier(targetProp.value)
+						) {
+							let source =
+								T.isIdentifier(targetProp.key) ? targetProp.key.name :
+								T.isStringLiteral(targetProp.key) ? targetProp.key.value :
+								undefined;
+							if (source) {
+								bindings.push({
+									source,
+									target: targetProp.value.name,
+								});
+								continue;
+							}
 						}
+
+						// if we get here, the `require(..)` wasn't of a supported form
+						console.error("Unsupported: destructuring pattern not ESM import-compatible");
+					}
+
+					if (bindings.length > 0) {
+						// console.log(`import { ${ binding } } from ${ specifier };`);
+						convertImports.push({
+							esmType: "named-import",
+							binding: bindings,
+							specifier,
+							context: {
+								statement: stmt,
+								declaration: decl,
+								declarationIdx: declIdx,
+							},
+						});
+						continue;
 					}
 				}
 
 				// if we get here, the `require(..)` wasn't of a supported form
-				console.error("Unsupported: require(..) statement not ESM import-compatible");
+				console.error("Unsupported: variable declaration not ESM import-compatible");
 			}
 
 			continue;
@@ -298,16 +314,17 @@ function analyzeRequires() {
 					let specifier = call.arguments[0].extra.raw;
 					let target = assignment.left.name;
 
-					// let target$1 = target + "$1";
 					// console.log(`import * as ${ target$1 } from ${ specifier }; ${ target } = ${ target$1 };`);
 					// console.log(`import ${ target$1 } from ${ specifier }; ${ target } = ${ target$1 };`);
 					convertImports.push({
-						esmType "default-import-indirect",
+						esmType: "default-import-indirect",
 						binding: {
 							target,
 						},
 						specifier,
-						path: stmt,
+						context: {
+							statement: stmt,
+						},
 					});
 					continue;
 				}
@@ -334,17 +351,17 @@ function analyzeRequires() {
 							assignment.right.property.value :
 						undefined;
 					if (source) {
-						// let target$1 = target + "$1";
-						// let binding = `${ source } as ${ target$1 }`;
 						// console.log(`import { ${ binding } } from ${ specifier }; ${ target } = ${ target$1 };`);
 						convertImports.push({
-							esmType "named-import-indirect",
+							esmType: "named-import-indirect",
 							binding: {
 								source,
 								target,
 							},
 							specifier,
-							path: stmt,
+							context: {
+								statement: stmt,
+							},
 						});
 						continue;
 					}
@@ -355,37 +372,46 @@ function analyzeRequires() {
 				T.isObjectPattern(assignment.left) &&
 				stmtReqCalls.find(p => p.node == assignment.right)
 			) {
+				let call = assignment.right;
+				let specifier = call.arguments[0].extra.raw;
 				let pattern = assignment.left;
-				// simple, single destructuring pattern?
-				if (
-					pattern.properties.length == 1 &&
-					!pattern.properties[0].computed &&
-					T.isIdentifier(pattern.properties[0].value)
-				) {
-					let targetProp = pattern.properties[0];
-					let source =
-						T.isIdentifier(targetProp.key) ? targetProp.key.name :
-						T.isStringLiteral(targetProp.key) ? targetProp.key.value :
-						undefined;
-					if (source) {
-						let call = assignment.right;
-						let specifier = call.arguments[0].extra.raw;
-						let target = pattern.properties[0].value.name;
-
-						// let target$1 = target + "$1";
-						// let binding = `${source} as ${target$1}`;
-						// console.log(`import { ${ binding } } from ${ specifier }; ${ target } = ${ target$1 };`);
-						convertImports.push({
-							esmType "named-import-indirect",
-							binding: {
+				let bindings = [];
+				for (let targetProp of pattern.properties) {
+					// simple destructuring target?
+					if (
+						!targetProp.computed &&
+						T.isIdentifier(targetProp.value)
+					) {
+						let source =
+							T.isIdentifier(targetProp.key) ? targetProp.key.name :
+							T.isStringLiteral(targetProp.key) ? targetProp.key.value :
+							undefined;
+						if (source) {
+							bindings.push({
 								source,
-								target,
-							},
-							specifier,
-							path: stmt,
-						});
-						continue;
+								target: targetProp.value.name,
+							});
+							continue;
+						}
 					}
+
+					// if we get here, the `require(..)` wasn't of a supported form
+					console.error("Unsupported: destructuring pattern not ESM import-compatible");
+				}
+
+				if (bindings.length > 0) {
+					console.log(bindings);
+
+					// console.log(`import { ${ binding } } from ${ specifier };`);
+					convertImports.push({
+						esmType: "named-import-indirect",
+						binding: bindings,
+						specifier,
+						context: {
+							statement: stmt,
+						},
+					});
+					continue;
 				}
 			}
 		}
@@ -418,15 +444,19 @@ function analyzeExports() {
 						T.isIdentifier(target.property,{ name: "exports", })
 					)
 				) {
-					let expVal = exportLiteralValue(source);
+					let expVal = exportPrimitiveLiteralValue(source);
 
 					// exporting a primitive/literal value?
 					if (expVal) {
 						// console.log(`export default ${ expVal };`);
 						convertExports.push({
-							esmType "default-export-simple",
-							source: expVal,
-							path: stmt,
+							esmType: "default-export-simple",
+							binding: {
+								source: expVal,
+							},
+							context: {
+								statement: stmt,
+							},
 						});
 						continue;
 					}
@@ -434,9 +464,13 @@ function analyzeExports() {
 					else if (T.isIdentifier(source)) {
 						// console.log(`export default ${ source.name };`);
 						convertExports.push({
-							esmType "default-export-simple",
-							source: source.name,
-							path: stmt,
+							esmType: "default-export-simple",
+							binding: {
+								source: source.name,
+							},
+							context: {
+								statement: stmt,
+							},
 						});
 						continue;
 					}
@@ -444,9 +478,13 @@ function analyzeExports() {
 					else {
 						// console.log("export default ..;");
 						convertExports.push({
-							esmType "default-export",
-							source,
-							path: stmt,
+							esmType: "default-export-complex",
+							binding: {
+								source,
+							},
+							context: {
+								statement: stmt,
+							},
 						});
 						continue;
 					}
@@ -467,16 +505,20 @@ function analyzeExports() {
 						T.isIdentifier(target.property,{ name: "exports", })
 					)
 				) {
-					let expVal = exportLiteralValue(source);
+					let expVal = exportPrimitiveLiteralValue(source);
 
 					// exporting a primitive/literal value?
 					if (expVal) {
 						// console.log(`export var ${ exportName } = ${ expVal };`);
 						convertExports.push({
-							esmType "named-declaration-export-simple",
-							binding: exportName,
-							source: expVal,
-							path: stmt,
+							esmType: "named-declaration-export-simple",
+							binding: {
+								source: expVal,
+								target: exportName,
+							},
+							context: {
+								statement: stmt,
+							},
 						});
 						continue;
 					}
@@ -485,23 +527,27 @@ function analyzeExports() {
 						if (source.name == exportName) {
 							// console.log(`export { ${ source.name } };`);
 							convertExports.push({
-								esmType "named-export",
-								binding: exportName,
-								source: expVal,
-								path: stmt,
+								esmType: "named-export",
+								binding: {
+									source: source.name,
+								},
+								context: {
+									statement: stmt,
+								},
 							});
 							continue;
 						}
 						else {
 							// console.log(`export { ${ source.name } as ${ exportName } };`);
 							convertExports.push({
-								esmType "named-export",
+								esmType: "named-export",
 								binding: {
 									source: source.name,
 									target: exportName,
 								},
-								source: expVal,
-								path: stmt,
+								context: {
+									statement: stmt,
+								},
 							});
 							continue;
 						}
@@ -510,10 +556,14 @@ function analyzeExports() {
 					else {
 						// console.log(`export var ${ exportName } = ..;`);
 						convertExports.push({
-							esmType "named-declaration-export",
-							binding: exportName,
-							source: expVal,
-							path: stmt,
+							esmType: "named-declaration-export-complex",
+							binding: {
+								source,
+								target: exportName,
+							},
+							context: {
+								statement: stmt,
+							},
 						});
 						continue;
 					}
@@ -526,7 +576,7 @@ function analyzeExports() {
 	}
 }
 
-function exportLiteralValue(node) {
+function exportPrimitiveLiteralValue(node) {
 	if (T.isStringLiteral(node)) {
 		return node.extra.raw;
 	}
@@ -536,8 +586,11 @@ function exportLiteralValue(node) {
 	else if (T.isNullLiteral(node)) {
 		return "null";
 	}
-	else if (T.isLiteral(node)) {
-		return node.value;
+	else if (
+		T.isNumericLiteral(node) ||
+		T.isBooleanLiteral(node)
+	) {
+		return String(node.value);
 	}
 }
 
