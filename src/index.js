@@ -509,7 +509,7 @@ function analyzeExports() {
 
 					// exporting a primitive/literal value?
 					if (expVal) {
-						// console.log(`export var ${ exportName } = ${ expVal };`);
+						// console.log(`var ${ exportName }$1 = ${ expVal }; export { ${exportName}$1 as ${ exportName } };`);
 						convertExports.push({
 							esmType: "named-declaration-export-simple",
 							binding: {
@@ -524,6 +524,7 @@ function analyzeExports() {
 					}
 					// exporting an identifier?
 					else if (T.isIdentifier(source)) {
+						// export == source?
 						if (source.name == exportName) {
 							// console.log(`export { ${ source.name } };`);
 							convertExports.push({
@@ -537,6 +538,7 @@ function analyzeExports() {
 							});
 							continue;
 						}
+						// export renamed
 						else {
 							// console.log(`export { ${ source.name } as ${ exportName } };`);
 							convertExports.push({
@@ -554,7 +556,7 @@ function analyzeExports() {
 					}
 					// exporting any other value/expression
 					else {
-						// console.log(`export var ${ exportName } = ..;`);
+						// console.log(`var ${ exportName }$1 = ..; export { ${exportName}$1 as ${ exportName } };`);
 						convertExports.push({
 							esmType: "named-declaration-export-complex",
 							binding: {
