@@ -10,134 +10,49 @@ var babylon = require("babylon");
 
 var UMDTemplate = fs.readFileSync(path.join(__dirname,"umd-template.js"),"utf-8");
 
-var programPath;
-var requireStatements = new Set();
-var exportStatements = new Set();
-var requireCalls = new WeakMap();
-var exportAssignments = new WeakMap();
-
-var convertImports = [];
-var convertExports = [];
-
-var visitors = {
-	Program: {
-		exit(path) {
-			programPath = path;
-		},
-	},
-	CallExpression: {
-		exit(path) {
-			// require(..) call?
-			if (T.isIdentifier(path.node.callee,{ name: "require", })) {
-				// require(" some string literal ") ?
-				if (
-					path.node.arguments.length == 1 &&
-					T.isStringLiteral(path.node.arguments[0])
-				) {
-					let parentStatementPath = findParentStatement(path.parentPath);
-					if (parentStatementPath) {
-						requireStatements.add(parentStatementPath);
-						if (!requireCalls.has(parentStatementPath)) {
-							requireCalls.set(parentStatementPath,[]);
-						}
-						requireCalls.get(parentStatementPath).push(path);
-					}
-				}
-				// non-string literals not supported
-				else {
-					console.error("Unsupported: require(..) statement without a single string-literal argument.");
-				}
-			}
-		}
-	},
-	MemberExpression: {
-		exit(path) {
-			// module.exports?
-			if (
-				T.isIdentifier(path.node.object,{ name: "module", }) &&
-				T.isIdentifier(path.node.property,{ name: "exports" })
-			) {
-				// used as a left-hand assignment target?
-				if (isAssignmentTarget(path)) {
-					let parentStatementPath = findParentStatement(path.parentPath);
-					if (parentStatementPath) {
-						exportStatements.add(parentStatementPath);
-						if (!exportAssignments.has(parentStatementPath)) {
-							exportAssignments.set(parentStatementPath,[]);
-						}
-						exportAssignments.get(parentStatementPath).push(path);
-					}
-				}
-				else {
-					console.error("Unsupported: module.exports not used as an assignment target.");
-				}
-			}
-		}
-	},
-	Identifier: {
-		exit(path) {
-			// exports?
-			if (
-				path.node.name == "exports" &&
-				// NOT x.exports form?
-				// note: exports.x is totally allowed, but x.exports
-				//   isn't an export form we care about
-				!(
-					T.isMemberExpression(path.parent) &&
-					path.parent.property == path.node
-				)
-			) {
-				// used as a left-hand assignment target?
-				if (isAssignmentTarget(path)) {
-					let parentStatementPath = findParentStatement(path.parentPath);
-					if (parentStatementPath) {
-						exportStatements.add(parentStatementPath);
-						if (!exportAssignments.has(parentStatementPath)) {
-							exportAssignments.set(parentStatementPath,[]);
-						}
-						exportAssignments.get(parentStatementPath).push(path);
-					}
-				}
-				else {
-					console.error("Unsupported: module.exports not used as an assignment target.");
-				}
-			}
-		}
-	}
+var depMap = {
+	"MyCoolModule": "test.js",
+	"One": "1.js",
+	"Two": "2.js",
+	"Three": "3.js",
+	"Four": "4.js",
+	"Five": "5.js",
+	"Six": "6.js",
+	"Seven": "7.js",
+	"Eight": "8.js",
+	"Nine": "9.js",
+	"Ten": "10.js",
+	"Eleven": "11.js",
+	"Twelve": "12.js",
+	"Thirteen": "13.js",
+	"Fourteen": "14.js",
+	"Fifteen": "15.js",
 };
 
+var testJS = fs.readFileSync(path.join(__dirname,depMap["MyCoolModule"]),"utf-8");
 
-
-build(
-	fs.readFileSync(path.join(__dirname,"test.js"),"utf-8"),
+buildUMD(
+	testJS,
 	"MyCoolModule",
-	{
-		"MyCoolModule": "test.js",
-		"One": "1.js",
-		"Two": "2.js",
-		"Three": "3.js",
-		"Four": "4.js",
-		"Five": "5.js",
-		"Six": "6.js",
-		"Seven": "7.js",
-		"Eight": "8.js",
-		"Nine": "9.js",
-		"Ten": "10.js",
-		"Eleven": "11.js",
-		"Twelve": "12.js",
-		"Thirteen": "13.js",
-		"Fourteen": "14.js",
-		"Fifteen": "15.js",
-	}
+	depMap
 );
 
-function generateUMD(moduleName,dependencyMap,ast) {
-	// ast = babylon.parse(generate(ast).code);
+console.log("");
+
+buildESM(testJS);
+
+
+// *****************************************
+
+
+function buildUMD(code,moduleName,dependencyMap) {
+	var { programAST, programPath, convertRequires, convertExports, } = identifyRequiresAndExports(code);
+
 	var depEntries = Object.entries(dependencyMap);
 	var deps = {};
 
-	// convert all imports
-	for (let impt of convertImports) {
+	// convert all requires to UMD dependencies
+	for (let impt of convertRequires) {
 		let specifierPath = impt.specifier.slice(1,-1);
 
 		// populate discovered-deps map
@@ -231,8 +146,9 @@ function generateUMD(moduleName,dependencyMap,ast) {
 		// );
 	}
 
-	var tmpl = babylon.parse(UMDTemplate);
-	traverse(tmpl,{
+	// construct UMD from template
+	var umdAST = babylon.parse(UMDTemplate);
+	traverse(umdAST,{
 		Program: {
 			exit(path) {
 				var callExprPath = path.get("body.0.expression");
@@ -241,8 +157,8 @@ function generateUMD(moduleName,dependencyMap,ast) {
 				callExprPath.get("arguments.0").replaceWith(T.StringLiteral(moduleName));
 
 				// set dependencies and named parameters
-				let dependencies = Object.entries(deps);
-				let funcPath = callExprPath.get("arguments.3");
+				var dependencies = Object.entries(deps);
+				var funcPath = callExprPath.get("arguments.3");
 				if (dependencies.length > 0) {
 					let dependenciesPath = callExprPath.get("arguments.2");
 					for (let [depName,depPath,] of dependencies) {
@@ -258,35 +174,130 @@ function generateUMD(moduleName,dependencyMap,ast) {
 
 				// set module body
 				funcPath.replaceWithSourceString(
-					`${ generate(funcPath.node).code.slice(0,-1) }${ generate(ast).code }\n}`
+					`${ generate(funcPath.node).code.slice(0,-1) }${ generate(programAST).code }\n}`
 				);
 			},
 		}
 	});
 
-	return generate(tmpl).code;
+	console.log(generate(umdAST).code);
 }
 
-function generateESM(ast) {
-	ast = babylon.parse(generate(ast).code);
-	return "// esm!";
+function buildESM(code) {
+	// var { ast, convertRequires, convertExports, } = identifyRequiresAndExports(code);
+	console.log("// esm!");
 }
 
-function build(code,moduleName,depMap) {
-	var ast = babylon.parse(code);
-	traverse(ast,visitors);
-	analyzeRequires();
-	analyzeExports();
+function identifyRequiresAndExports(code) {
+	var programPath;
+	var requireStatements = new Set();
+	var exportStatements = new Set();
+	var requireCalls = new WeakMap();
+	var exportAssignments = new WeakMap();
 
-	var umdCode = generateUMD(moduleName,depMap,ast);
-	var esmCode = generateESM(ast);
+	var visitors = {
+		Program: {
+			exit(path) {
+				programPath = path;
+			},
+		},
+		CallExpression: {
+			exit(path) {
+				// require(..) call?
+				if (T.isIdentifier(path.node.callee,{ name: "require", })) {
+					// require(" some string literal ") ?
+					if (
+						path.node.arguments.length == 1 &&
+						T.isStringLiteral(path.node.arguments[0])
+					) {
+						let parentStatementPath = findParentStatement(path.parentPath);
+						if (parentStatementPath) {
+							requireStatements.add(parentStatementPath);
+							if (!requireCalls.has(parentStatementPath)) {
+								requireCalls.set(parentStatementPath,[]);
+							}
+							requireCalls.get(parentStatementPath).push(path);
+						}
+					}
+					// non-string literals not supported
+					else {
+						console.error("Unsupported: require(..) statement without a single string-literal argument.");
+					}
+				}
+			}
+		},
+		MemberExpression: {
+			exit(path) {
+				// module.exports?
+				if (
+					T.isIdentifier(path.node.object,{ name: "module", }) &&
+					T.isIdentifier(path.node.property,{ name: "exports" })
+				) {
+					// used as a left-hand assignment target?
+					if (isAssignmentTarget(path)) {
+						let parentStatementPath = findParentStatement(path.parentPath);
+						if (parentStatementPath) {
+							exportStatements.add(parentStatementPath);
+							if (!exportAssignments.has(parentStatementPath)) {
+								exportAssignments.set(parentStatementPath,[]);
+							}
+							exportAssignments.get(parentStatementPath).push(path);
+						}
+					}
+					else {
+						console.error("Unsupported: module.exports not used as an assignment target.");
+					}
+				}
+			}
+		},
+		Identifier: {
+			exit(path) {
+				// exports?
+				if (
+					path.node.name == "exports" &&
+					// NOT x.exports form?
+					// note: exports.x is totally allowed, but x.exports
+					//   isn't an export form we care about
+					!(
+						T.isMemberExpression(path.parent) &&
+						path.parent.property == path.node
+					)
+				) {
+					// used as a left-hand assignment target?
+					if (isAssignmentTarget(path)) {
+						let parentStatementPath = findParentStatement(path.parentPath);
+						if (parentStatementPath) {
+							exportStatements.add(parentStatementPath);
+							if (!exportAssignments.has(parentStatementPath)) {
+								exportAssignments.set(parentStatementPath,[]);
+							}
+							exportAssignments.get(parentStatementPath).push(path);
+						}
+					}
+					else {
+						console.error("Unsupported: module.exports not used as an assignment target.");
+					}
+				}
+			}
+		}
+	};
 
-	console.log(umdCode);
-	console.log("");
-	console.log(esmCode);
+	var programAST = babylon.parse(code);
+	traverse(programAST,visitors);
+	var convertRequires = analyzeRequires(requireStatements,requireCalls);
+	var convertExports = analyzeExports(exportStatements,exportAssignments);
+
+	return {
+		programAST,
+		programPath,
+		convertRequires,
+		convertExports,
+	};
 }
 
-function analyzeRequires() {
+function analyzeRequires(requireStatements,requireCalls) {
+	var convertRequires = [];
+
 	for (let stmt of requireStatements) {
 		let stmtReqCalls = requireCalls.get(stmt);
 
@@ -301,7 +312,7 @@ function analyzeRequires() {
 			let specifier = call.arguments[0].extra.raw;
 
 			// console.log(`import ${ specifier };`);
-			convertImports.push({
+			convertRequires.push({
 				esmType: "bare-import",
 				umdType: "remove-require-unique",
 				specifier,
@@ -328,7 +339,7 @@ function analyzeRequires() {
 
 						// console.log(`import * as ${ declNode.id.name } from ${ specifier };`);
 						// console.log(`import ${ declNode.id.name } from ${ specifier };`);
-						convertImports.push({
+						convertRequires.push({
 							esmType: "default-import",
 							umdType: "default-require",
 							binding: declNode.id.name,
@@ -364,7 +375,7 @@ function analyzeRequires() {
 							undefined;
 						if (source) {
 							// console.log(`import { ${ binding } } from ${ specifier };`);
-							convertImports.push({
+							convertRequires.push({
 								esmType: "named-import",
 								umdType: "named-dependency",
 								binding: {
@@ -421,7 +432,7 @@ function analyzeRequires() {
 
 					if (bindings.length > 0) {
 						// console.log(`import { ${ binding } } from ${ specifier };`);
-						convertImports.push({
+						convertRequires.push({
 							esmType: "named-import",
 							umdType: "destructured-dependency",
 							binding: bindings,
@@ -459,7 +470,7 @@ function analyzeRequires() {
 
 					// console.log(`import * as ${ target$1 } from ${ specifier }; ${ target } = ${ target$1 };`);
 					// console.log(`import ${ target$1 } from ${ specifier }; ${ target } = ${ target$1 };`);
-					convertImports.push({
+					convertRequires.push({
 						esmType: "default-import-indirect",
 						umdType: "indirect-target",
 						binding: {
@@ -497,7 +508,7 @@ function analyzeRequires() {
 						undefined;
 					if (source) {
 						// console.log(`import { ${ binding } } from ${ specifier }; ${ target } = ${ target$1 };`);
-						convertImports.push({
+						convertRequires.push({
 							esmType: "named-import-indirect",
 							umdType: "indirect-source-target",
 							binding: {
@@ -549,7 +560,7 @@ function analyzeRequires() {
 
 				if (bindings.length > 0) {
 					// console.log(`import { ${ binding } } from ${ specifier }; ${ target } = ${ target$1 };`);
-					convertImports.push({
+					convertRequires.push({
 						esmType: "named-import-indirect",
 						umdType: "indirect-source-target",
 						binding: bindings,
@@ -566,9 +577,13 @@ function analyzeRequires() {
 		// if we get here, the `require(..)` wasn't of a supported form
 		console.error("Unsupported: require(..) statement not ESM import-compatible");
 	}
+
+	return convertRequires;
 }
 
-function analyzeExports() {
+function analyzeExports(exportStatements,exportAssignments) {
+	var convertExports = [];
+
 	for (let stmt of exportStatements) {
 		let stmtExpAssignments = exportAssignments.get(stmt);
 
@@ -723,6 +738,8 @@ function analyzeExports() {
 		// if we get here, the exports/module.exports wasn't of a supported form
 		console.error("Unsupported: exports expression not ESM export-compatible");
 	}
+
+	return convertExports;
 }
 
 function exportPrimitiveLiteralValue(node) {
