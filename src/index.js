@@ -133,7 +133,7 @@ function buildUMD(code,moduleName,dependencyMap) {
 
 	// setup substitute module-exports target
 	var $module$exports = programPath.scope.generateUidIdentifier("exp").name;
-	programPath.node.body.unshift(
+	programPath.get("body.0").insertBefore(
 		T.VariableDeclaration(
 			"var",
 			[
@@ -141,7 +141,7 @@ function buildUMD(code,moduleName,dependencyMap) {
 			]
 		)
 	);
-	programPath.node.body.push(
+	programPath.get(`body.${ (programPath.node.body.length - 1) }`).insertAfter(
 		T.ReturnStatement(T.Identifier($module$exports))
 	);
 
@@ -175,20 +175,31 @@ function buildUMD(code,moduleName,dependencyMap) {
 				if (dependencies.length > 0) {
 					let dependenciesPath = callExprPath.get("arguments.2");
 					for (let [depName,depPath,] of dependencies) {
+						// add dependency entry
 						dependenciesPath.node.properties.push(
 							T.ObjectProperty(
 								T.StringLiteral(depName),
 								T.StringLiteral(depPath)
 							)
 						);
+
+						// add named parameter
 						funcPath.node.params.push(T.Identifier(depName));
 					}
 				}
 
 				// set module body
-				funcPath.replaceWithSourceString(
-					`${ generate(funcPath.node).code.slice(0,-1) }${ generate(programAST).code }\n}`
-				);
+				funcPath.get("body").replaceWithMultiple(programAST.program.body);
+
+				// add strict-mode directive?
+				if (
+					programAST.program.directives.length > 0 &&
+					programAST.program.directives[0].value.value == "use strict"
+				) {
+					funcPath.get("body.body.0").insertBefore(
+						T.ExpressionStatement(T.StringLiteral("use strict"))
+					);
+				}
 			},
 		}
 	});
