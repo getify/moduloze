@@ -40,7 +40,7 @@ buildUMD(
 
 console.log("");
 
-buildESM(testJS);
+buildESM("test.js",testJS);
 
 
 // *****************************************
@@ -53,8 +53,8 @@ function buildUMD(codePath,code,moduleName,dependencyMap) {
 	var deps = {};
 
 	// convert all requires to UMD dependencies
-	for (let impt of convertRequires) {
-		let specifierPath = impt.specifier.slice(1,-1);
+	for (let req of convertRequires) {
+		let specifierPath = req.specifier;
 
 		// populate discovered-deps map
 		let [ depName, depPath, ] = depEntries.find(
@@ -63,7 +63,7 @@ function buildUMD(codePath,code,moduleName,dependencyMap) {
 		if (depName && !(depName in deps)) {
 			deps[depName] = depPath;
 		}
-		else if (impt.umdType == "remove-require-unique") {
+		else if (req.umdType == "remove-require-unique") {
 			depName = programPath.scope.generateUidIdentifier("imp").name;
 			deps[depName] = specifierPath;
 		}
@@ -73,49 +73,49 @@ function buildUMD(codePath,code,moduleName,dependencyMap) {
 		}
 
 		// process require() statements/expressions
-		if (impt.umdType == "remove-require-unique") {
-			impt.context.statement.remove();
+		if (req.umdType == "remove-require-unique") {
+			req.context.statement.remove();
 		}
-		else if (impt.umdType == "default-require") {
+		else if (req.umdType == "default-require") {
 			// variable declaration different name than registered dependency-name?
-			if (depName != impt.binding) {
+			if (depName != req.binding.target) {
 				// replace require(..) call with registered dependency-name
-				impt.context.declarator.get("init").replaceWith(
+				req.context.declarator.get("init").replaceWith(
 					T.Identifier(depName)
 				);
 			}
 			else {
 				// remove whole declarator/statement
-				impt.context.declarator.remove();
+				req.context.declarator.remove();
 			}
 		}
-		else if (impt.umdType == "named-dependency") {
-			impt.context.declarator.get("init").replaceWith(
+		else if (req.umdType == "named-dependency") {
+			req.context.declarator.get("init").replaceWith(
 				T.MemberExpression(
 					T.Identifier(depName),
-					T.Identifier(impt.binding.source)
+					T.Identifier(req.binding.source)
 				)
 			);
 		}
-		else if (impt.umdType == "destructured-dependency") {
-			impt.context.declarator.get("init").replaceWith(
+		else if (req.umdType == "destructured-dependency") {
+			req.context.declarator.get("init").replaceWith(
 				T.Identifier(depName)
 			);
 		}
-		else if (impt.umdType == "indirect-target") {
-			impt.context.statement.replaceWith(
+		else if (req.umdType == "indirect-target") {
+			req.context.statement.replaceWith(
 				T.ExpressionStatement(
 					T.AssignmentExpression(
 						"=",
-						T.Identifier(impt.binding.target),
+						T.Identifier(req.binding.target),
 						T.Identifier(depName)
 					)
 				)
 			);
 		}
-		else if (impt.umdType == "indirect-source-target") {
-			for (let binding of (Array.isArray(impt.binding) ? impt.binding : [impt.binding,])) {
-				impt.context.statement.insertBefore(
+		else if (req.umdType == "indirect-source-target") {
+			for (let binding of (Array.isArray(req.binding) ? req.binding : [req.binding,])) {
+				req.context.statement.insertBefore(
 					T.ExpressionStatement(
 						T.AssignmentExpression(
 							"=",
@@ -128,7 +128,7 @@ function buildUMD(codePath,code,moduleName,dependencyMap) {
 					)
 				);
 			}
-			impt.context.statement.remove();
+			req.context.statement.remove();
 		}
 	}
 
@@ -220,9 +220,143 @@ function buildUMD(codePath,code,moduleName,dependencyMap) {
 	console.log(generate(programAST).code);
 }
 
-function buildESM(code) {
-	// var { ast, convertRequires, convertExports, } = identifyRequiresAndExports(code);
-	console.log("// esm!");
+function buildESM(codePath,code) {
+	var { programAST, programPath, convertRequires, convertExports, } = identifyRequiresAndExports(codePath,code);
+
+	// convert all requires to ESM imports
+	for (let req of convertRequires) {
+		if (req.esmType == "bare-import") {
+			// replace with bare-import statement
+			req.context.statement.replaceWith(
+				T.ImportDeclaration([],T.StringLiteral(req.specifier))
+			);
+		}
+		else if (req.esmType == "default-import") {
+			// replace with default-import statement
+			req.context.statement.replaceWith(
+				T.ImportDeclaration(
+					[
+						T.ImportDefaultSpecifier(T.Identifier(req.binding.target)),
+					],
+					T.StringLiteral(req.specifier)
+				)
+			);
+		}
+		else if (req.esmType == "named-import") {
+			// collect named bindings
+			let importBindings = [];
+			for (let binding of (Array.isArray(req.binding) ? req.binding : [ req.binding, ])) {
+				importBindings.push(
+					T.ImportSpecifier(
+						T.Identifier(binding.target),
+						T.Identifier(binding.source)
+					)
+				);
+			}
+
+			// replace with named-import statement
+			req.context.statement.replaceWith(
+				T.ImportDeclaration(importBindings,T.StringLiteral(req.specifier))
+			);
+		}
+		else if (req.esmType == "default-import-indirect") {
+			// replace with...
+			req.context.statement.replaceWithMultiple([
+				// ...default-import statement
+				T.ImportDeclaration(
+					[
+						T.ImportDefaultSpecifier(T.Identifier(req.binding.uniqueTarget)),
+					],
+					T.StringLiteral(req.specifier)
+				),
+				// ...and indirect target assignment
+				T.ExpressionStatement(
+					T.AssignmentExpression(
+						"=",
+						T.Identifier(req.binding.target),
+						T.Identifier(req.binding.uniqueTarget)
+					)
+				),
+			]);
+		}
+		else if (req.esmType == "named-import-indirect") {
+			// collect named bindings and indirect target assignments
+			let importBindings = [];
+			let assignments = [];
+			for (let binding of (Array.isArray(req.binding) ? req.binding : [ req.binding, ])) {
+				importBindings.push(
+					T.ImportSpecifier(
+						T.Identifier(binding.uniqueTarget),
+						T.Identifier(binding.source)
+					)
+				);
+				assignments.push(
+					T.ExpressionStatement(
+						T.AssignmentExpression(
+							"=",
+							T.Identifier(binding.target),
+							T.Identifier(binding.uniqueTarget)
+						)
+					)
+				);
+			}
+
+			// replace with named-import statement and assignments
+			req.context.statement.replaceWithMultiple([
+				T.ImportDeclaration(importBindings,T.StringLiteral(req.specifier)),
+				...assignments
+			]);
+		}
+	}
+
+	// convert all exports
+	for (let expt of convertExports) {
+		if (expt.esmType == "default-export") {
+			expt.context.statement.replaceWith(
+				T.ExportDefaultDeclaration(expt.binding.source)
+			);
+		}
+		else if (expt.esmType == "named-declaration-export") {
+			expt.context.statement.replaceWithMultiple([
+				T.VariableDeclaration(
+					"let",
+					[
+						T.VariableDeclarator(
+							T.Identifier(expt.binding.uniqueTarget),
+							expt.binding.source
+						),
+					]
+				),
+				T.ExportNamedDeclaration(
+					null,
+					[
+						T.ExportSpecifier(
+							T.Identifier(expt.binding.uniqueTarget),
+							T.Identifier(expt.binding.target)
+						),
+					]
+				)
+			]);
+		}
+		else if (expt.esmType == "named-export") {
+			expt.context.statement.replaceWith(
+				T.ExportNamedDeclaration(
+					null,
+					[
+						T.ExportSpecifier(
+							T.Identifier(expt.binding.source),
+							T.Identifier(expt.binding.target)
+						),
+					]
+				)
+			);
+		}
+	}
+
+	// remove any strict-mode directive (since ESM is automatically strict-mode)
+	programAST.program.directives.length = 0;
+
+	console.log(generate(programAST).code);
 }
 
 function identifyRequiresAndExports(codePath,code) {
@@ -346,7 +480,7 @@ function analyzeRequires(requireStatements,requireCalls) {
 			stmtReqCalls[0].node == stmt.node.expression
 		) {
 			let call = stmt.node.expression;
-			let specifier = call.arguments[0].extra.raw;
+			let specifier = call.arguments[0].extra.rawValue;
 
 			// console.log(`import ${ specifier };`);
 			convertRequires.push({
@@ -372,14 +506,16 @@ function analyzeRequires(requireStatements,requireCalls) {
 						stmtReqCalls.find(p => p.node == declNode.init)
 					) {
 						let call = declNode.init;
-						let specifier = call.arguments[0].extra.raw;
+						let specifier = call.arguments[0].extra.rawValue;
 
 						// console.log(`import * as ${ declNode.id.name } from ${ specifier };`);
 						// console.log(`import ${ declNode.id.name } from ${ specifier };`);
 						convertRequires.push({
 							esmType: "default-import",
 							umdType: "default-require",
-							binding: declNode.id.name,
+							binding: {
+								target: declNode.id.name
+							},
 							specifier,
 							context: {
 								statement: stmt,
@@ -402,7 +538,7 @@ function analyzeRequires(requireStatements,requireCalls) {
 						)
 					) {
 						let call = declNode.init.object;
-						let specifier = call.arguments[0].extra.raw;
+						let specifier = call.arguments[0].extra.rawValue;
 						let target = declNode.id.name;
 						let source =
 							T.isIdentifier(declNode.init.property) ?
@@ -441,7 +577,7 @@ function analyzeRequires(requireStatements,requireCalls) {
 					stmtReqCalls.find(p => p.node == declNode.init)
 				) {
 					let call = declNode.init;
-					let specifier = call.arguments[0].extra.raw;
+					let specifier = call.arguments[0].extra.rawValue;
 					let pattern = declNode.id;
 					let bindings = [];
 					for (let targetProp of pattern.properties) {
@@ -502,7 +638,7 @@ function analyzeRequires(requireStatements,requireCalls) {
 				// simple call assignment? x = require("..")
 				if (stmtReqCalls.find(p => p.node == assignment.right)) {
 					let call = assignment.right;
-					let specifier = call.arguments[0].extra.raw;
+					let specifier = call.arguments[0].extra.rawValue;
 					let target = assignment.left.name;
 
 					// console.log(`import * as ${ target$1 } from ${ specifier }; ${ target } = ${ target$1 };`);
@@ -535,7 +671,7 @@ function analyzeRequires(requireStatements,requireCalls) {
 					)
 				) {
 					let call = assignment.right.object;
-					let specifier = call.arguments[0].extra.raw;
+					let specifier = call.arguments[0].extra.rawValue;
 					let target = assignment.left.name;
 					let source =
 						T.isIdentifier(assignment.right.property) ?
@@ -568,7 +704,7 @@ function analyzeRequires(requireStatements,requireCalls) {
 				stmtReqCalls.find(p => p.node == assignment.right)
 			) {
 				let call = assignment.right;
-				let specifier = call.arguments[0].extra.raw;
+				let specifier = call.arguments[0].extra.rawValue;
 				let pattern = assignment.left;
 				let bindings = [];
 				for (let targetProp of pattern.properties) {
@@ -643,31 +779,17 @@ function analyzeExports(exportStatements,exportAssignments) {
 						T.isIdentifier(target.property,{ name: "exports", })
 					)
 				) {
-					let expVal = exportPrimitiveLiteralValue(source);
-
-					// exporting a primitive/literal value?
-					if (expVal) {
-						// console.log(`export default ${ expVal };`);
-						convertExports.push({
-							esmType: "default-export-value",
-							umdType: "default-assignment",
-							binding: {
-								source: expVal,
-							},
-							context: {
-								statement: stmt,
-							},
-						});
-						continue;
-					}
 					// exporting an identifier?
-					else if (T.isIdentifier(source)) {
+					if (
+						T.isIdentifier(source) &&
+						source.name != "undefined"
+					) {
 						// console.log(`export default ${ source.name };`);
 						convertExports.push({
-							esmType: "default-export-identifier",
+							esmType: "default-export",
 							umdType: "default-assignment",
 							binding: {
-								source: source.name,
+								source,
 							},
 							context: {
 								statement: stmt,
@@ -707,16 +829,17 @@ function analyzeExports(exportStatements,exportAssignments) {
 						T.isIdentifier(target.property,{ name: "exports", })
 					)
 				) {
-					let expVal = exportPrimitiveLiteralValue(source);
-
-					// exporting a primitive/literal value?
-					if (expVal) {
-						// console.log(`var ${ exportName }$1 = ${ expVal }; export { ${ exportName }$1 as ${ exportName } };`);
+					// exporting an identifier?
+					if (
+						T.isIdentifier(source) &&
+						source.name != "undefined"
+					) {
+						// console.log(`export { ${ source.name } as ${ exportName } };`);
 						convertExports.push({
-							esmType: "named-declaration-export-simple",
+							esmType: "named-export",
 							umdType: "named-export",
 							binding: {
-								source: expVal,
+								source: source.name,
 								target: exportName,
 							},
 							context: {
@@ -725,49 +848,16 @@ function analyzeExports(exportStatements,exportAssignments) {
 						});
 						continue;
 					}
-					// exporting an identifier?
-					else if (T.isIdentifier(source)) {
-						// export == source?
-						if (source.name == exportName) {
-							// console.log(`export { ${ source.name } };`);
-							convertExports.push({
-								esmType: "named-export",
-								umdType: "named-export",
-								binding: {
-									source: source.name,
-								},
-								context: {
-									statement: stmt,
-								},
-							});
-							continue;
-						}
-						// export renamed
-						else {
-							// console.log(`export { ${ source.name } as ${ exportName } };`);
-							convertExports.push({
-								esmType: "named-export-renamed",
-								umdType: "named-export",
-								binding: {
-									source: source.name,
-									target: exportName,
-								},
-								context: {
-									statement: stmt,
-								},
-							});
-							continue;
-						}
-					}
 					// exporting any other value/expression
 					else {
 						// console.log(`var ${ exportName }$1 = ..; export { ${exportName}$1 as ${ exportName } };`);
 						convertExports.push({
-							esmType: "named-declaration-export-complex",
+							esmType: "named-declaration-export",
 							umdType: "named-export",
 							binding: {
 								source,
 								target: exportName,
+								uniqueTarget: stmt.scope.generateUidIdentifier("exp").name,
 							},
 							context: {
 								statement: stmt,
