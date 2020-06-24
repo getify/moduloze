@@ -131,19 +131,32 @@ function buildUMD(code,moduleName,dependencyMap) {
 		}
 	}
 
+	// setup substitute module-exports target
+	var $module$exports = programPath.scope.generateUidIdentifier("exp").name;
+	programPath.node.body.unshift(
+		T.VariableDeclaration(
+			"var",
+			[
+				T.VariableDeclarator(T.Identifier($module$exports)),
+			]
+		)
+	);
+	programPath.node.body.push(
+		T.ReturnStatement(T.Identifier($module$exports))
+	);
+
 	// convert all exports
 	for (let expt of convertExports) {
-		// impt.context.statement.insertBefore(
-		// 	T.VariableDeclaration(
-		// 		"let",
-		// 		[
-		// 			T.VariableDeclarator(
-		// 				T.Identifier(impt.binding.uniqueTarget),
-		// 				T.Identifier(impt.binding.source)
-		// 			)
-		// 		]
-		// 	)
-		// );
+		if (expt.umdType == "default-assignment") {
+			expt.context.statement.get("expression.left").replaceWith(
+				T.Identifier($module$exports)
+			);
+		}
+		else if (expt.umdType == "named-export") {
+			expt.context.statement.get("expression.left.object").replaceWith(
+				T.Identifier($module$exports)
+			);
+		}
 	}
 
 	// construct UMD from template
@@ -612,7 +625,8 @@ function analyzeExports(exportStatements,exportAssignments) {
 					if (expVal) {
 						// console.log(`export default ${ expVal };`);
 						convertExports.push({
-							esmType: "default-export-simple",
+							esmType: "default-export-value",
+							umdType: "default-assignment",
 							binding: {
 								source: expVal,
 							},
@@ -626,7 +640,8 @@ function analyzeExports(exportStatements,exportAssignments) {
 					else if (T.isIdentifier(source)) {
 						// console.log(`export default ${ source.name };`);
 						convertExports.push({
-							esmType: "default-export-simple",
+							esmType: "default-export-identifier",
+							umdType: "default-assignment",
 							binding: {
 								source: source.name,
 							},
@@ -640,7 +655,8 @@ function analyzeExports(exportStatements,exportAssignments) {
 					else {
 						// console.log("export default ..;");
 						convertExports.push({
-							esmType: "default-export-complex",
+							esmType: "default-export",
+							umdType: "default-assignment",
 							binding: {
 								source,
 							},
@@ -671,9 +687,10 @@ function analyzeExports(exportStatements,exportAssignments) {
 
 					// exporting a primitive/literal value?
 					if (expVal) {
-						// console.log(`var ${ exportName }$1 = ${ expVal }; export { ${exportName}$1 as ${ exportName } };`);
+						// console.log(`var ${ exportName }$1 = ${ expVal }; export { ${ exportName }$1 as ${ exportName } };`);
 						convertExports.push({
 							esmType: "named-declaration-export-simple",
+							umdType: "named-export",
 							binding: {
 								source: expVal,
 								target: exportName,
@@ -691,6 +708,7 @@ function analyzeExports(exportStatements,exportAssignments) {
 							// console.log(`export { ${ source.name } };`);
 							convertExports.push({
 								esmType: "named-export",
+								umdType: "named-export",
 								binding: {
 									source: source.name,
 								},
@@ -704,7 +722,8 @@ function analyzeExports(exportStatements,exportAssignments) {
 						else {
 							// console.log(`export { ${ source.name } as ${ exportName } };`);
 							convertExports.push({
-								esmType: "named-export",
+								esmType: "named-export-renamed",
+								umdType: "named-export",
 								binding: {
 									source: source.name,
 									target: exportName,
@@ -721,6 +740,7 @@ function analyzeExports(exportStatements,exportAssignments) {
 						// console.log(`var ${ exportName }$1 = ..; export { ${exportName}$1 as ${ exportName } };`);
 						convertExports.push({
 							esmType: "named-declaration-export-complex",
+							umdType: "named-export",
 							binding: {
 								source,
 								target: exportName,
