@@ -1,9 +1,16 @@
 "use strict";
 
+var path = require("path");
+var fs = require("fs");
+
 var { default: traverse, } = require("@babel/traverse");
 var T = require("@babel/types");
+var { default: generate, } = require("@babel/generator");
 var babylon = require("babylon");
 
+var UMDTemplate = fs.readFileSync(path.join(__dirname,"umd-template.js"),"utf-8");
+
+var programPath;
 var requireStatements = new Set();
 var exportStatements = new Set();
 var requireCalls = new WeakMap();
@@ -13,6 +20,11 @@ var convertImports = [];
 var convertExports = [];
 
 var visitors = {
+	Program: {
+		exit(path) {
+			programPath = path;
+		},
+	},
 	CallExpression: {
 		exit(path) {
 			// require(..) call?
@@ -96,57 +108,182 @@ var visitors = {
 
 
 
-
 build(
-
-`
-require("1.js");
-var v2 = require("2.js");
-var v3 = require("3.js").v3;
-var v4 = require("4.js").v;
-var v5 = require("5.js")["v"];
-v6 = require("6.js");
-v7 = require("7.js").v7;
-v8 = require("8.js").v;
-v9 = require("9.js")["v"];
-var { v10 } = require("10.js");
-var { v: v11 } = require("11.js");
-var { "v": v12 } = require("12.js");
-({ v13 } = require("13.js"));
-({ v: v14 } = require("14.js"));
-({ "v": v15 } = require("15.js"));
-
-module.exports = 1;
-module.exports = t2;
-module.exports = t[3];
-module.exports.t4 = 4;
-module.exports.t5 = "t5";
-module.exports.t6 = true;
-module.exports.t7 = t7;
-module.exports.t8 = v;
-module.exports.t9 = null;
-module.exports.t10 = undefined;
-module.exports.t11 = t11();
-exports = 12;
-exports = t13;
-exports = t[14];
-exports.t15 = 15;
-exports.t16 = "t16";
-exports.t17 = true;
-exports.t18 = t18;
-exports.t19 = v;
-exports.t20 = null;
-exports.t21 = undefined;
-exports.t22 = t22();
-`
-
+	fs.readFileSync(path.join(__dirname,"test.js"),"utf-8"),
+	"MyCoolModule",
+	{
+		"MyCoolModule": "test.js",
+		"One": "1.js",
+		"Two": "2.js",
+		"Three": "3.js",
+		"Four": "4.js",
+		"Five": "5.js",
+		"Six": "6.js",
+		"Seven": "7.js",
+		"Eight": "8.js",
+		"Nine": "9.js",
+		"Ten": "10.js",
+		"Eleven": "11.js",
+		"Twelve": "12.js",
+		"Thirteen": "13.js",
+		"Fourteen": "14.js",
+		"Fifteen": "15.js",
+	}
 );
 
-function build(code) {
+function generateUMD(moduleName,dependencyMap,ast) {
+	// ast = babylon.parse(generate(ast).code);
+	var depEntries = Object.entries(dependencyMap);
+	var deps = {};
+
+	// convert all imports
+	for (let impt of convertImports) {
+		let specifierPath = impt.specifier.slice(1,-1);
+
+		// populate discovered-deps map
+		let [ depName, depPath, ] = depEntries.find(
+			([ depName, depPath, ]) => depPath == specifierPath
+		) || [];
+		if (depName && !(depName in deps)) {
+			deps[depName] = depPath;
+		}
+		else if (impt.umdType == "remove-require-unique") {
+			depName = programPath.scope.generateUidIdentifier("imp").name;
+			deps[depName] = specifierPath;
+		}
+		else {
+			console.error(`Unknown UMD dependency: ${ specifierPath }`);
+			return;
+		}
+
+		// process require() statements/expressions
+		if (impt.umdType == "remove-require-unique") {
+			impt.context.statement.remove();
+		}
+		else if (impt.umdType == "default-require") {
+			// variable declaration different name than registered dependency-name?
+			if (depName != impt.binding) {
+				// replace require(..) call with registered dependency-name
+				impt.context.declarator.get("init").replaceWith(
+					T.Identifier(depName)
+				);
+			}
+			else {
+				// remove whole declarator/statement
+				impt.context.declarator.remove();
+			}
+		}
+		else if (impt.umdType == "named-dependency") {
+			impt.context.declarator.get("init").replaceWith(
+				T.MemberExpression(
+					T.Identifier(depName),
+					T.Identifier(impt.binding.source)
+				)
+			);
+		}
+		else if (impt.umdType == "destructured-dependency") {
+			impt.context.declarator.get("init").replaceWith(
+				T.Identifier(depName)
+			);
+		}
+		else if (impt.umdType == "indirect-target") {
+			impt.context.statement.replaceWith(
+				T.ExpressionStatement(
+					T.AssignmentExpression(
+						"=",
+						T.Identifier(impt.binding.target),
+						T.Identifier(depName)
+					)
+				)
+			);
+		}
+		else if (impt.umdType == "indirect-source-target") {
+			for (let binding of (Array.isArray(impt.binding) ? impt.binding : [impt.binding,])) {
+				impt.context.statement.insertBefore(
+					T.ExpressionStatement(
+						T.AssignmentExpression(
+							"=",
+							T.Identifier(binding.target),
+							T.MemberExpression(
+								T.Identifier(depName),
+								T.Identifier(binding.source)
+							)
+						)
+					)
+				);
+			}
+			impt.context.statement.remove();
+		}
+	}
+
+	// convert all exports
+	for (let expt of convertExports) {
+		// impt.context.statement.insertBefore(
+		// 	T.VariableDeclaration(
+		// 		"let",
+		// 		[
+		// 			T.VariableDeclarator(
+		// 				T.Identifier(impt.binding.uniqueTarget),
+		// 				T.Identifier(impt.binding.source)
+		// 			)
+		// 		]
+		// 	)
+		// );
+	}
+
+	var tmpl = babylon.parse(UMDTemplate);
+	traverse(tmpl,{
+		Program: {
+			exit(path) {
+				var callExprPath = path.get("body.0.expression");
+
+				// set module-name
+				callExprPath.get("arguments.0").replaceWith(T.StringLiteral(moduleName));
+
+				// set dependencies and named parameters
+				let dependencies = Object.entries(deps);
+				let funcPath = callExprPath.get("arguments.3");
+				if (dependencies.length > 0) {
+					let dependenciesPath = callExprPath.get("arguments.2");
+					for (let [depName,depPath,] of dependencies) {
+						dependenciesPath.node.properties.push(
+							T.ObjectProperty(
+								T.StringLiteral(depName),
+								T.StringLiteral(depPath)
+							)
+						);
+						funcPath.node.params.push(T.Identifier(depName));
+					}
+				}
+
+				// set module body
+				funcPath.replaceWithSourceString(
+					`${ generate(funcPath.node).code.slice(0,-1) }${ generate(ast).code }\n}`
+				);
+			},
+		}
+	});
+
+	return generate(tmpl).code;
+}
+
+function generateESM(ast) {
+	ast = babylon.parse(generate(ast).code);
+	return "// esm!";
+}
+
+function build(code,moduleName,depMap) {
 	var ast = babylon.parse(code);
 	traverse(ast,visitors);
 	analyzeRequires();
 	analyzeExports();
+
+	var umdCode = generateUMD(moduleName,depMap,ast);
+	var esmCode = generateESM(ast);
+
+	console.log(umdCode);
+	console.log("");
+	console.log(esmCode);
 }
 
 function analyzeRequires() {
@@ -166,6 +303,7 @@ function analyzeRequires() {
 			// console.log(`import ${ specifier };`);
 			convertImports.push({
 				esmType: "bare-import",
+				umdType: "remove-require-unique",
 				specifier,
 				context: {
 					statement: stmt,
@@ -175,26 +313,29 @@ function analyzeRequires() {
 		}
 		// var/let/const declaration statement?
 		else if (T.isVariableDeclaration(stmt.node)) {
-			for (let [declIdx,decl,] of stmt.node.declarations.entries()) {
+			for (let [declIdx,declNode,] of stmt.node.declarations.entries()) {
+				let decl = stmt.get(`declarations.${ declIdx }`);
+
 				// normal identifier declaration? var x = ..
-				if (T.isIdentifier(decl.id)) {
+				if (T.isIdentifier(declNode.id)) {
 					// call as initialization assignment? var x = require("..")
 					if (
-						T.isCallExpression(decl.init) &&
-						stmtReqCalls.find(p => p.node == decl.init)
+						T.isCallExpression(declNode.init) &&
+						stmtReqCalls.find(p => p.node == declNode.init)
 					) {
-						let call = decl.init;
+						let call = declNode.init;
 						let specifier = call.arguments[0].extra.raw;
 
-						// console.log(`import * as ${ decl.id.name } from ${ specifier };`);
-						// console.log(`import ${ decl.id.name } from ${ specifier };`);
+						// console.log(`import * as ${ declNode.id.name } from ${ specifier };`);
+						// console.log(`import ${ declNode.id.name } from ${ specifier };`);
 						convertImports.push({
 							esmType: "default-import",
-							binding: decl.id.name,
+							umdType: "default-require",
+							binding: declNode.id.name,
 							specifier,
 							context: {
 								statement: stmt,
-								declaration: decl,
+								declarator: decl,
 								declarationIdx: declIdx,
 							},
 						});
@@ -202,29 +343,30 @@ function analyzeRequires() {
 					}
 					else if (
 						// require("..") is part of a simple member expression?
-						T.isMemberExpression(decl.init) &&
-						stmtReqCalls.find(p => p.node == decl.init.object) &&
+						T.isMemberExpression(declNode.init) &&
+						stmtReqCalls.find(p => p.node == declNode.init.object) &&
 						(
 							// single property expression via . operator?
 							// x = require("..").x
-							T.isIdentifier(decl.init.property) ||
+							T.isIdentifier(declNode.init.property) ||
 							// single property expression via [".."] operator?
-							T.isStringLiteral(decl.init.property)
+							T.isStringLiteral(declNode.init.property)
 						)
 					) {
-						let call = decl.init.object;
+						let call = declNode.init.object;
 						let specifier = call.arguments[0].extra.raw;
-						let target = decl.id.name;
+						let target = declNode.id.name;
 						let source =
-							T.isIdentifier(decl.init.property) ?
-								decl.init.property.name :
-							T.isStringLiteral(decl.init.property) ?
-								decl.init.property.value :
+							T.isIdentifier(declNode.init.property) ?
+								declNode.init.property.name :
+							T.isStringLiteral(declNode.init.property) ?
+								declNode.init.property.value :
 							undefined;
 						if (source) {
 							// console.log(`import { ${ binding } } from ${ specifier };`);
 							convertImports.push({
 								esmType: "named-import",
+								umdType: "named-dependency",
 								binding: {
 									source,
 									target,
@@ -232,7 +374,7 @@ function analyzeRequires() {
 								specifier,
 								context: {
 									statement: stmt,
-									declaration: decl,
+									declarator: decl,
 									declarationIdx: declIdx,
 								},
 							});
@@ -246,13 +388,13 @@ function analyzeRequires() {
 				}
 				// destructuring assignment? var { x } = require("..")
 				else if (
-					T.isObjectPattern(decl.id) &&
-					T.isCallExpression(decl.init) &&
-					stmtReqCalls.find(p => p.node == decl.init)
+					T.isObjectPattern(declNode.id) &&
+					T.isCallExpression(declNode.init) &&
+					stmtReqCalls.find(p => p.node == declNode.init)
 				) {
-					let call = decl.init;
+					let call = declNode.init;
 					let specifier = call.arguments[0].extra.raw;
-					let pattern = decl.id;
+					let pattern = declNode.id;
 					let bindings = [];
 					for (let targetProp of pattern.properties) {
 						// simple destructuring target?
@@ -281,11 +423,12 @@ function analyzeRequires() {
 						// console.log(`import { ${ binding } } from ${ specifier };`);
 						convertImports.push({
 							esmType: "named-import",
+							umdType: "destructured-dependency",
 							binding: bindings,
 							specifier,
 							context: {
 								statement: stmt,
-								declaration: decl,
+								declarator: decl,
 								declarationIdx: declIdx,
 							},
 						});
@@ -318,8 +461,10 @@ function analyzeRequires() {
 					// console.log(`import ${ target$1 } from ${ specifier }; ${ target } = ${ target$1 };`);
 					convertImports.push({
 						esmType: "default-import-indirect",
+						umdType: "indirect-target",
 						binding: {
 							target,
+							uniqueTarget: stmt.scope.generateUidIdentifier("imp").name,
 						},
 						specifier,
 						context: {
@@ -354,9 +499,11 @@ function analyzeRequires() {
 						// console.log(`import { ${ binding } } from ${ specifier }; ${ target } = ${ target$1 };`);
 						convertImports.push({
 							esmType: "named-import-indirect",
+							umdType: "indirect-source-target",
 							binding: {
 								source,
 								target,
+								uniqueTarget: stmt.scope.generateUidIdentifier("imp").name,
 							},
 							specifier,
 							context: {
@@ -390,6 +537,7 @@ function analyzeRequires() {
 							bindings.push({
 								source,
 								target: targetProp.value.name,
+								uniqueTarget: stmt.scope.generateUidIdentifier("imp").name,
 							});
 							continue;
 						}
@@ -400,11 +548,10 @@ function analyzeRequires() {
 				}
 
 				if (bindings.length > 0) {
-					console.log(bindings);
-
-					// console.log(`import { ${ binding } } from ${ specifier };`);
+					// console.log(`import { ${ binding } } from ${ specifier }; ${ target } = ${ target$1 };`);
 					convertImports.push({
 						esmType: "named-import-indirect",
+						umdType: "indirect-source-target",
 						binding: bindings,
 						specifier,
 						context: {
