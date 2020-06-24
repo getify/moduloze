@@ -32,6 +32,7 @@ var depMap = {
 var testJS = fs.readFileSync(path.join(__dirname,depMap["MyCoolModule"]),"utf-8");
 
 buildUMD(
+	depMap["MyCoolModule"],
 	testJS,
 	"MyCoolModule",
 	depMap
@@ -45,8 +46,8 @@ buildESM(testJS);
 // *****************************************
 
 
-function buildUMD(code,moduleName,dependencyMap) {
-	var { programAST, programPath, convertRequires, convertExports, } = identifyRequiresAndExports(code);
+function buildUMD(codePath,code,moduleName,dependencyMap) {
+	var { programAST, programPath, convertRequires, convertExports, } = identifyRequiresAndExports(codePath,code);
 
 	var depEntries = Object.entries(dependencyMap);
 	var deps = {};
@@ -187,24 +188,36 @@ function buildUMD(code,moduleName,dependencyMap) {
 						funcPath.node.params.push(T.Identifier(depName));
 					}
 				}
-
-				// set module body
-				funcPath.get("body").replaceWithMultiple(programAST.program.body);
-
-				// add strict-mode directive?
-				if (
-					programAST.program.directives.length > 0 &&
-					programAST.program.directives[0].value.value == "use strict"
-				) {
-					funcPath.get("body.body.0").insertBefore(
-						T.ExpressionStatement(T.StringLiteral("use strict"))
-					);
-				}
 			},
 		}
 	});
 
-	console.log(generate(umdAST).code);
+	// add UMD wrapper to program
+	var umdWrapper = T.clone(umdAST.program.body[0],/*deep=*/true,/*withoutLoc=*/true);
+	programPath.unshiftContainer("body",umdWrapper);
+
+	// get reference to UMD definition function
+	var defFuncPath = programPath.get("body.0.expression.arguments.3.body");
+
+	// add strict-mode directive to UMD definition function?
+	if (
+		programAST.program.directives.length > 0 &&
+		programAST.program.directives[0].value.value == "use strict"
+	) {
+		defFuncPath.node.directives.push(
+			T.Directive(T.DirectiveLiteral("use strict"))
+		);
+	}
+
+	// move all the program's top-level statements into the UMD definition function
+	while (programAST.program.body.length > 1) {
+		let stmt = programPath.get(`body.1`);
+		let newStmt = T.cloneDeep(stmt.node);
+		defFuncPath.pushContainer("body",newStmt);
+		stmt.remove();
+	}
+
+	console.log(generate(programAST).code);
 }
 
 function buildESM(code) {
@@ -212,7 +225,7 @@ function buildESM(code) {
 	console.log("// esm!");
 }
 
-function identifyRequiresAndExports(code) {
+function identifyRequiresAndExports(codePath,code) {
 	var programPath;
 	var requireStatements = new Set();
 	var exportStatements = new Set();
@@ -306,7 +319,7 @@ function identifyRequiresAndExports(code) {
 		}
 	};
 
-	var programAST = babylon.parse(code);
+	var programAST = babylon.parse(code,{ sourceFilename: codePath, });
 	traverse(programAST,visitors);
 	var convertRequires = analyzeRequires(requireStatements,requireCalls);
 	var convertExports = analyzeExports(exportStatements,exportAssignments);
