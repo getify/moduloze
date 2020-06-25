@@ -6,7 +6,7 @@ var fs = require("fs");
 var { default: traverse, } = require("@babel/traverse");
 var T = require("@babel/types");
 var { default: generate, } = require("@babel/generator");
-var babylon = require("babylon");
+var { parse, } = require("@babel/parser");
 
 var UMDTemplate = fs.readFileSync(path.join(__dirname,"umd-template.js"),"utf-8");
 
@@ -167,7 +167,7 @@ function buildUMD(codePath,code,moduleName,dependencyMap) {
 	}
 
 	// construct UMD from template
-	var umdAST = babylon.parse(UMDTemplate);
+	var umdAST = parse(UMDTemplate);
 	traverse(umdAST,{
 		Program: {
 			exit(path) {
@@ -467,7 +467,7 @@ function identifyRequiresAndExports(codePath,code) {
 		}
 	};
 
-	var programAST = babylon.parse(code,{ sourceFilename: codePath, });
+	var programAST = parse(code,{ sourceFilename: codePath, });
 	traverse(programAST,visitors);
 	var convertRequires = analyzeRequires(requireStatements,requireCalls);
 	var convertExports = analyzeExports(exportStatements,exportAssignments);

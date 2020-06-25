@@ -4,8 +4,9 @@
 	"version": "0.0.1",
 	"main": "src/index.js",
 	"dependencies": {
-		"@babel/traverse": "~7.2.3",
-		"@babel/types": "~7.3.0",
-		"babylon": "~6.18.0"
+		"@babel/traverse": "~7.10.2",
+		"@babel/types": "~7.10.2",
+		"@babel/generator": "~7.10.2",
+		"@babel/parser": "~7.10.2"
 	}
 }
