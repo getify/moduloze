@@ -27,6 +27,10 @@ var depMap = {
 	"Thirteen": "13.js",
 	"Fourteen": "14.js",
 	"Fifteen": "15.js",
+	"Sixteen": "16.js",
+	"Seventeen": "17.js",
+	"Eighteen": "18.js",
+	"Nineteen": "19.js",
 };
 
 var testJS = fs.readFileSync(path.join(__dirname,depMap["MyCoolModule"]),"utf-8");
@@ -60,8 +64,10 @@ function buildUMD(codePath,code,moduleName,dependencyMap) {
 		let [ depName, depPath, ] = depEntries.find(
 			([ depName, depPath, ]) => depPath == specifierPath
 		) || [];
-		if (depName && !(depName in deps)) {
-			deps[depName] = depPath;
+		if (depName) {
+			if (!(depName in deps)) {
+				deps[depName] = depPath;
+			}
 		}
 		else if (req.umdType == "remove-require-unique") {
 			depName = programPath.scope.generateUidIdentifier("imp").name;
@@ -247,10 +253,12 @@ function buildESM(codePath,code) {
 			let importBindings = [];
 			for (let binding of (Array.isArray(req.binding) ? req.binding : [ req.binding, ])) {
 				importBindings.push(
-					T.ImportSpecifier(
-						T.Identifier(binding.target),
-						T.Identifier(binding.source)
-					)
+					(binding.source == "default") ?
+						T.ImportDefaultSpecifier(T.Identifier(binding.target)) :
+						T.ImportSpecifier(
+							T.Identifier(binding.target),
+							T.Identifier(binding.source)
+						)
 				);
 			}
 
@@ -285,10 +293,12 @@ function buildESM(codePath,code) {
 			let assignments = [];
 			for (let binding of (Array.isArray(req.binding) ? req.binding : [ req.binding, ])) {
 				importBindings.push(
-					T.ImportSpecifier(
-						T.Identifier(binding.uniqueTarget),
-						T.Identifier(binding.source)
-					)
+					(binding.source == "default") ?
+						T.ImportDefaultSpecifier(T.Identifier(binding.uniqueTarget)) :
+						T.ImportSpecifier(
+							T.Identifier(binding.uniqueTarget),
+							T.Identifier(binding.source)
+						)
 				);
 				assignments.push(
 					T.ExpressionStatement(
@@ -327,28 +337,32 @@ function buildESM(codePath,code) {
 						),
 					]
 				),
-				T.ExportNamedDeclaration(
-					null,
-					[
-						T.ExportSpecifier(
-							T.Identifier(expt.binding.uniqueTarget),
-							T.Identifier(expt.binding.target)
-						),
-					]
-				)
+				(expt.binding.target == "default") ?
+					T.ExportDefaultDeclaration(T.Identifier(expt.binding.uniqueTarget)) :
+					T.ExportNamedDeclaration(
+						null,
+						[
+							T.ExportSpecifier(
+								T.Identifier(expt.binding.uniqueTarget),
+								T.Identifier(expt.binding.target)
+							),
+						]
+					)
 			]);
 		}
 		else if (expt.esmType == "named-export") {
 			expt.context.statement.replaceWith(
-				T.ExportNamedDeclaration(
-					null,
-					[
-						T.ExportSpecifier(
-							T.Identifier(expt.binding.source),
-							T.Identifier(expt.binding.target)
-						),
-					]
-				)
+				(expt.binding.target == "default") ?
+					T.ExportDefaultDeclaration(expt.binding.source) :
+					T.ExportNamedDeclaration(
+						null,
+						[
+							T.ExportSpecifier(
+								T.Identifier(expt.binding.source),
+								T.Identifier(expt.binding.target)
+							),
+						]
+					)
 			);
 		}
 	}
