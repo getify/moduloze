@@ -1,0 +1,10 @@
+{
+	"recursive": false,
+	"from": "src",
+	"to": "dist",
+	"skip": [
+		"**/umd-template.js"
+	],
+	"ignoreMissingDependency": true,
+	".mjs": true
+}

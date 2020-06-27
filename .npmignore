@@ -1,6 +1,8 @@
+.env
 .npmignore
 .gitignore
 .coveralls.yml
 .travis.yml
+.mz-build/
 node_modules/
 coverage/

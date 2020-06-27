@@ -1,4 +1,6 @@
+.env
 .coveralls.yml
+.mz-build/
 node_modules/
 dist/
 coverage/
