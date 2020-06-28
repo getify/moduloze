@@ -9,7 +9,6 @@ var T = require("@babel/types");
 module.exports.findParentStatement = findParentStatement;
 module.exports.isAssignmentTarget = findParentStatement;
 module.exports.expandHomeDir = expandHomeDir;
-// module.exports.stripRelativeCurrentDir = stripRelativeCurrentDir;
 module.exports.addRelativeCurrentDir = addRelativeCurrentDir;
 module.exports.splitPath = splitPath;
 module.exports.isDirectory = isDirectory;
@@ -56,12 +55,6 @@ function expandHomeDir(pathStr) {
 	}
 	return pathStr;
 }
-
-// function stripRelativeCurrentDir(pathStr) {
-// 	return (
-// 		!path.isAbsolute(pathStr) ? pathStr.replace(/^\.[/\\]+/,"") : pathStr
-// 	);
-// }
 
 function addRelativeCurrentDir(pathStr) {
 	return (

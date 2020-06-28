@@ -10,6 +10,7 @@ var mkdirp = require("mkdirp");
 var recursiveReadDir = require("recursive-readdir-sync");
 
 var build = require("./index.js");
+var { bundleUMD, } = require("./index.js");
 var { defaultLibConfig, } = require("./index.js");
 var {
 	expandHomeDir,
@@ -78,10 +79,17 @@ function CLI() {
 		}
 	}
 
+	var umdBuilds = [];
+
 	// build each file (for each format)
 	for (let [ basePath, relativePath, ] of inputFiles) {
 		let code = fs.readFileSync(path.join(basePath,relativePath),"utf-8");
 		let res = build(config,relativePath,code,knownDeps);
+
+		// save UMD build so we can later bundle all UMDs together
+		if (res.umd) {
+			umdBuilds.push(res.umd);
+		}
 
 		// process each output format
 		for (let format of [ "esm", "umd", ]) {
@@ -104,6 +112,18 @@ function CLI() {
 					return showError(`Output file (${ outputPath }) could not be created.`);
 				}
 			}
+		}
+	}
+
+	// need to bundle the UMDs together?
+	if (umdBuilds.length > 0) {
+		let res = bundleUMD(umdBuilds);
+		let outputPath = path.join(config.to,"umd","bundle.js");
+		try {
+			fs.writeFileSync(outputPath,res.code,"utf-8");
+		}
+		catch (err) {
+			return showError(`UMD Bundle (${ outputPath }) could not be created.`);
 		}
 	}
 }

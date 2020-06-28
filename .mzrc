@@ -3,8 +3,9 @@
 	"from": "src",
 	"to": "dist",
 	"skip": [
-		"**/umd-template.js"
+		"**/umd-template.js",
+		"**/umd-bundle-template.js"
 	],
-	"ignoreMissingDependency": true,
+	"ignoreUnknownDependency": true,
 	".mjs": true
 }

@@ -7,6 +7,7 @@ var { default: traverse, } = require("@babel/traverse");
 var T = require("@babel/types");
 var { default: generate, } = require("@babel/generator");
 var { parse, } = require("@babel/parser");
+var toposort = require("toposort");
 
 var {
 	expandHomeDir,
@@ -20,15 +21,18 @@ var {
 	analyzeExports,
 } = require("./analysis.js");
 
-module.exports = buildUMD;
+module.exports = build;
+module.exports.bundle = bundle;
+module.exports.sortDependencies = sortDependencies;
 
 
 // ******************************
 
 var UMDTemplate = fs.readFileSync(path.join(__dirname,"umd-template.js"),"utf-8");
+var UMDBundleTemplate = fs.readFileSync(path.join(__dirname,"umd-bundle-template.js"),"utf-8");
 
 
-function buildUMD(config,pathStr,code,depMap) {
+function build(config,pathStr,code,depMap) {
 	var {
 		programAST,
 		programPath,
@@ -55,7 +59,7 @@ function buildUMD(config,pathStr,code,depMap) {
 
 			if (
 				req.umdType == "remove-require-unique" ||
-				config.ignoreMissingDependency
+				config.ignoreUnknownDependency
 			) {
 				depName = generateName();
 				depMap[specifierPath] = depName;
@@ -214,5 +218,73 @@ function buildUMD(config,pathStr,code,depMap) {
 		stmt.remove();
 	}
 
-	return generate(programAST);
+	return { ...generate(programAST), ast: programAST, refDeps, modulePath, };
+}
+
+function bundle(umdBuilds) {
+	// make sure dependencies are ordered correctly
+	umdBuilds = sortDependencies(umdBuilds);
+
+	// construct UMD bundle from template
+	var programPath;
+	var umdBundleAST = parse(UMDBundleTemplate);
+	traverse(umdBundleAST,{
+		Program: {
+			exit(path) {
+				programPath = path;
+			},
+		}
+	});
+
+	// get reference to UMD definition function
+	var defListPath = programPath.get("body.0.expression.arguments.1");
+
+	// insert all UMDs
+	for (let umd of umdBuilds) {
+		// append UMD to program body
+		programPath.pushContainer("body",
+			T.clone(umd.ast.program.body[0],/*deep=*/true,/*withoutLoc=*/true)
+		);
+
+		// reference inserted UMD's call expression
+		let callExprPath = programPath.get("body.1.expression");
+
+		// move UMD definition parts into bundle wrapper array
+		let name = T.clone(callExprPath.get("arguments.0").node,/*deep=*/true,/*withoutLoc=*/true);
+		let deps = T.clone(callExprPath.get("arguments.2").node,/*deep=*/true,/*withoutLoc=*/true);
+		let def = T.clone(callExprPath.get("arguments.3").node,/*deep=*/true,/*withoutLoc=*/true);
+		defListPath.pushContainer("elements",T.ArrayExpression(
+			[
+				name,
+				deps,
+				def,
+			]
+		));
+
+		// remove inserted UMD
+		programPath.get("body.1").remove();
+	}
+
+	return generate(umdBundleAST);
+}
+
+function sortDependencies(umdBuilds) {
+	// map of module paths to the builds
+	var depMap = {};
+	for (let umd of umdBuilds) {
+		depMap[umd.modulePath] = umd;
+	}
+
+	// construct graph edges (dependency relationships)
+	var depsGraph = [];
+	for (let umd of umdBuilds) {
+		for (let refDepPath of Object.keys(umd.refDeps)) {
+			if (refDepPath in depMap) {
+				depsGraph.push([ umd, depMap[refDepPath], ]);
+			}
+		}
+	}
+
+	// perform topological sort
+	return toposort.array(umdBuilds,depsGraph).reverse();
 }

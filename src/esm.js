@@ -15,12 +15,12 @@ var {
 	analyzeExports,
 } = require("./analysis.js");
 
-module.exports = buildESM;
+module.exports = build;
 
 
 // ******************************
 
-function buildESM(config,pathStr,code,depMap) {
+function build(config,pathStr,code,depMap) {
 	var {
 		programAST,
 		programPath,
