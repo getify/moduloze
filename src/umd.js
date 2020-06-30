@@ -221,7 +221,7 @@ function build(config,pathStr,code,depMap) {
 	return { ...generate(programAST), ast: programAST, refDeps, modulePath, };
 }
 
-function bundle(umdBuilds) {
+function bundle(config,umdBuilds) {
 	// make sure dependencies are ordered correctly
 	umdBuilds = sortDependencies(umdBuilds);
 

@@ -6,6 +6,7 @@
 		"**/umd-template.js",
 		"**/umd-bundle-template.js"
 	],
+	"copyOnSkip": true,
 	"ignoreUnknownDependency": true,
 	".mjs": true
 }
