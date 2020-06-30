@@ -9,6 +9,7 @@ var minimist = require("minimist");
 var mkdirp = require("mkdirp");
 var recursiveReadDir = require("recursive-readdir-sync");
 
+var packageJSON = require("../package.json");
 var build = require("./index.js");
 var { bundleUMD, } = require("./index.js");
 var { defaultLibConfig, } = require("./index.js");
@@ -24,9 +25,10 @@ var {
 dotenv.config();
 
 var params = minimist(process.argv.slice(2),{
-	boolean: [ "help","build-esm","build-umd","recursive", ],
+	boolean: [ "help","version","build-esm","build-umd","recursive", ],
 	string: [ "config","from","to","bundle-umd", ],
 	alias: {
+		"config": "c",
 		"recursive": "r",
 		"build-esm": "e",
 		"build-umd": "u",
@@ -35,6 +37,7 @@ var params = minimist(process.argv.slice(2),{
 	},
 	default: {
 		help: false,
+		version: false,
 		recursive: false,
 		"build-esm": false,
 		"build-umd": false,
@@ -178,6 +181,11 @@ function checkArgsAndConfig() {
 		return;
 	}
 
+	if (params.version) {
+		printVersion();
+		return;
+	}
+
 	// must build at least one format
 	if (!(
 		config.buildESM || config.buildUMD
@@ -313,7 +321,8 @@ function printHelp() {
 	console.log("  mz {OPTIONS}");
 	console.log("");
 	console.log("--help                     print this help");
-	console.log("--config={PATH}            path to load config");
+	console.log("--version                  print version info");
+	console.log("--config={PATH}, -c        path to load config");
 	console.log(`                           [${ RCPATH }]`);
 	console.log("--from={PATH}              scan directory for input file(s)");
 	console.log(`                           [${ config.from }]`);
@@ -330,6 +339,10 @@ function printHelp() {
 	console.log("--bundle-umd={PATH}, -b    include UMD bundle");
 	console.log(`                           [${ config.bundleUMDPath || "./umd/bundle.js" }]`);
 	console.log("");
+}
+
+function printVersion() {
+	console.log(`v${ packageJSON.version }`);
 }
 
 function showError(err,includeHelp = false) {
