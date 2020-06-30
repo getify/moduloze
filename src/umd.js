@@ -22,6 +22,7 @@ var {
 } = require("./analysis.js");
 
 module.exports = build;
+module.exports.build = build;
 module.exports.bundle = bundle;
 module.exports.sortDependencies = sortDependencies;
 

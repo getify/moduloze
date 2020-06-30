@@ -16,6 +16,7 @@ var {
 } = require("./analysis.js");
 
 module.exports = build;
+module.exports.build = build;
 
 
 // ******************************
@@ -51,7 +52,10 @@ function build(config,pathStr,code,depMap) {
 			req.context.statement.replaceWith(
 				T.ImportDeclaration(
 					[
-						T.ImportDefaultSpecifier(T.Identifier(req.binding.target)),
+						(config.namespaceImport ?
+							T.ImportNamespaceSpecifier(T.Identifier(req.binding.target)) :
+							T.ImportDefaultSpecifier(T.Identifier(req.binding.target))
+						),
 					],
 					T.StringLiteral(specifierPath)
 				)
@@ -82,7 +86,10 @@ function build(config,pathStr,code,depMap) {
 				// ...default-import statement
 				T.ImportDeclaration(
 					[
-						T.ImportDefaultSpecifier(T.Identifier(req.binding.uniqueTarget)),
+						(config.namespaceImport ?
+							T.ImportNamespaceSpecifier(T.Identifier(req.binding.uniqueTarget)) :
+							T.ImportDefaultSpecifier(T.Identifier(req.binding.uniqueTarget))
+						),
 					],
 					T.StringLiteral(specifierPath)
 				),

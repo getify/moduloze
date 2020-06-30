@@ -46,6 +46,7 @@ var RCPATH = resolvePath(params.config || process.env.RCPATH || "./.mzrc");
 var config = defaultCLIConfig();
 
 module.exports = CLI;
+module.exports.CLI = CLI;
 
 
 // ******************************

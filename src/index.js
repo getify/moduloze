@@ -5,6 +5,7 @@ var { bundle: bundleUMD, } = require("./umd.js");
 var buildESM = require("./esm.js");
 
 module.exports = build;
+module.exports.build = build;
 module.exports.defaultLibConfig = defaultLibConfig;
 module.exports.bundleUMD = bundleUMD;
 
@@ -26,11 +27,13 @@ function build(config,pathStr,code,depMap = {}) {
 function defaultLibConfig({
 	ignoreUnknownDependency = false,
 	".mjs": renameMJS = false,
+	namespaceImport = false,
 	...otherConfig
 } = {}) {
 	return {
 		ignoreUnknownDependency,
 		".mjs": renameMJS,
+		namespaceImport,
 		...otherConfig,
 	};
 }
