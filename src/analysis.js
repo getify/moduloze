@@ -84,12 +84,15 @@ function identifyRequiresAndExports(codePath,code) {
 				// exports?
 				if (
 					path.node.name == "exports" &&
-					// NOT x.exports form?
+					// NOT x.exports form, and not part of a computed member-expression?
 					// note: exports.x is totally allowed, but x.exports
-					//   isn't an export form we care about
+					//   isn't an export form we support
 					!(
 						T.isMemberExpression(path.parent) &&
-						path.parent.property == path.node
+						(
+							path.parent.computed ||
+							path.parent.property == path.node
+						)
 					)
 				) {
 					// used as a left-hand assignment target?
@@ -190,7 +193,10 @@ function analyzeRequires(requireStatements,requireCalls) {
 						(
 							// single property expression via . operator?
 							// x = require("..").x
-							T.isIdentifier(declNode.init.property) ||
+							(
+								!declNode.init.computed &&
+								T.isIdentifier(declNode.init.property)
+							) ||
 							// single property expression via [".."] operator?
 							T.isStringLiteral(declNode.init.property)
 						)
@@ -322,7 +328,10 @@ function analyzeRequires(requireStatements,requireCalls) {
 					(
 						// single property expression via . operator?
 						// x = require("..").x
-						T.isIdentifier(assignment.right.property) ||
+						(
+							!assignment.right.computed &&
+							T.isIdentifier(assignment.right.property)
+						) ||
 						// single property expression via [".."] operator?
 						// x = require("..")[".."]
 						T.isStringLiteral(assignment.right.property)
@@ -429,14 +438,8 @@ function analyzeExports(exportStatements,exportAssignments) {
 			let source = assg.right;
 
 			if (target == stmtExpAssignments[0].node) {
-				if (
-					T.isIdentifier(target,{ name: "exports", }) ||
-					(
-						T.isMemberExpression(target) &&
-						T.isIdentifier(target.object,{ name: "module", }) &&
-						T.isIdentifier(target.property,{ name: "exports", })
-					)
-				) {
+				// assigning to `exports` or `module.exports`?
+				if (isModuleExports(target)) {
 					// exporting an identifier?
 					if (
 						T.isIdentifier(source) &&
@@ -477,16 +480,9 @@ function analyzeExports(exportStatements,exportAssignments) {
 					T.isIdentifier(target.property) ? target.property.name :
 					T.isStringLiteral(target.property) ? target.property.value :
 					undefined;
-				target = target.object;
 
-				if (
-					T.isIdentifier(target,{ name: "exports", }) ||
-					(
-						T.isMemberExpression(target) &&
-						T.isIdentifier(target.object,{ name: "module", }) &&
-						T.isIdentifier(target.property,{ name: "exports", })
-					)
-				) {
+				// object (ie, object.property) of member-expression is `exports` or `module.exports`?
+				if (isModuleExports(target.object)) {
 					// exporting an identifier?
 					if (
 						T.isIdentifier(source) &&
@@ -532,4 +528,21 @@ function analyzeExports(exportStatements,exportAssignments) {
 	}
 
 	return convertExports;
+}
+
+function isModuleExports(node) {
+	return (
+		T.isIdentifier(node,{ name: "exports", }) ||
+		(
+			T.isMemberExpression(node) &&
+			T.isIdentifier(node.object,{ name: "module", }) &&
+			(
+				(
+					!node.computed &&
+					T.isIdentifier(node.property,{ name: "exports", })
+				) ||
+				T.isStringLiteral(node.property,{ value: "exports", })
+			)
+		)
+	);
 }
