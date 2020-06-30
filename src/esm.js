@@ -130,7 +130,7 @@ function build(config,pathStr,code,depMap) {
 			// replace with named-import statement and assignments
 			req.context.statement.replaceWithMultiple([
 				T.ImportDeclaration(importBindings,T.StringLiteral(specifierPath)),
-				...assignments
+				...assignments,
 			]);
 		}
 	}
@@ -140,6 +140,26 @@ function build(config,pathStr,code,depMap) {
 		if (expt.esmType == "default-export") {
 			expt.context.statement.replaceWith(
 				T.ExportDefaultDeclaration(expt.binding.source)
+			);
+		}
+		else if (expt.esmType == "destructured-declaration-export") {
+			expt.context.statement.replaceWith(
+				T.ExportNamedDeclaration(
+					T.VariableDeclaration(
+						"let",
+						[
+							T.VariableDeclarator(
+								T.ObjectPattern([
+									T.ObjectProperty(
+										T.Identifier(expt.binding.sourceName),
+										T.Identifier(expt.binding.target)
+									)
+								]),
+								expt.binding.source
+							),
+						]
+					)
+				)
 			);
 		}
 		else if (expt.esmType == "named-declaration-export") {
@@ -153,17 +173,19 @@ function build(config,pathStr,code,depMap) {
 						),
 					]
 				),
-				(expt.binding.target == "default") ?
-					T.ExportDefaultDeclaration(T.Identifier(expt.binding.uniqueTarget)) :
-					T.ExportNamedDeclaration(
-						null,
-						[
-							T.ExportSpecifier(
-								T.Identifier(expt.binding.uniqueTarget),
-								T.Identifier(expt.binding.target)
-							),
-						]
-					)
+				(
+					(expt.binding.target == "default") ?
+						T.ExportDefaultDeclaration(T.Identifier(expt.binding.uniqueTarget)) :
+						T.ExportNamedDeclaration(
+							null,
+							[
+								T.ExportSpecifier(
+									T.Identifier(expt.binding.uniqueTarget),
+									T.Identifier(expt.binding.target)
+								),
+							]
+						)
+				),
 			]);
 		}
 		else if (expt.esmType == "named-export") {

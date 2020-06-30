@@ -502,6 +502,27 @@ function analyzeExports(exportStatements,exportAssignments) {
 						});
 						continue;
 					}
+					else if (T.isMemberExpression(source,{ computed: false, })) {
+						let sourceName =
+							T.isIdentifier(source.property) ? source.property.name :
+							T.isStringLiteral(source.property) ? source.property.value :
+							undefined;
+
+						// console.log(`export var { ${ sourceName }: ${ exportName } } = ${ source.object }`);
+						convertExports.push({
+							esmType: "destructured-declaration-export",
+							umdType: "named-export",
+							binding: {
+								sourceName,
+								source: source.object,
+								target: exportName,
+							},
+							context: {
+								statement: stmt,
+							},
+						});
+						continue;
+					}
 					// exporting any other value/expression
 					else {
 						// console.log(`var ${ exportName }$1 = ..; export { ${exportName}$1 as ${ exportName } };`);
