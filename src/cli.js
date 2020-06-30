@@ -10,9 +10,7 @@ var mkdirp = require("mkdirp");
 var recursiveReadDir = require("recursive-readdir-sync");
 
 var packageJSON = require("../package.json");
-var build = require("./index.js");
-var { bundleUMD, } = require("./index.js");
-var { defaultLibConfig, } = require("./index.js");
+var { build, bundleUMD, umdIndex, esmIndex, defaultLibConfig, } = require("./index.js");
 var {
 	expandHomeDir,
 	addRelativeCurrentDir,
@@ -79,15 +77,26 @@ function CLI() {
 	}
 
 	var umdBuilds = [];
+	var esmBuilds = [];
 
 	// build each file (for each format)
 	for (let [ basePath, relativePath, ] of inputFiles) {
 		let code = fs.readFileSync(path.join(basePath,relativePath),"utf-8");
 		let res = build(config,relativePath,code,knownDeps);
 
-		// save UMD build so we can later bundle all UMDs together?
-		if (config.bundleUMDPath && res.umd) {
+		// save UMD build (for bundling and/or catch-all generation)?
+		if (
+			res.umd &&
+			(
+				config.bundleUMDPath ||
+				config.generateIndex
+			)
+		) {
 			umdBuilds.push(res.umd);
+		}
+		// save ESM build (for catch-all generation)?
+		else if (res.esm && config.generateIndex) {
+			esmBuilds.push(res.esm);
 		}
 
 		// process each output format
@@ -111,15 +120,41 @@ function CLI() {
 		}
 	}
 
+	// generate the catch-all index for each build format
+	if (config.generateIndex) {
+		if (config.buildUMD) {
+			let indexBuild = umdIndex(config,umdBuilds,knownDeps);
+			umdBuilds.push(indexBuild);
+			let outputPath = path.join(config.to,"umd",indexBuild.modulePath);
+			try {
+				fs.writeFileSync(outputPath,indexBuild.code,"utf-8");
+			}
+			catch (err) {
+				return showError(`Generated index (${ outputPath }) could not be created.`);
+			}
+		}
+		if (config.buildESM) {
+			let indexBuild = esmIndex(config,esmBuilds,knownDeps);
+			esmBuilds.push(indexBuild);
+			let outputPath = path.join(config.to,"esm",indexBuild.modulePath);
+			try {
+				fs.writeFileSync(outputPath,indexBuild.code,"utf-8");
+			}
+			catch (err) {
+				return showError(`Generated index (${ outputPath }) could not be created.`);
+			}
+		}
+	}
+
 	// need to bundle all the UMDs together?
-	if (umdBuilds.length > 0) {
+	if (config.bundleUMDPath && umdBuilds.length > 0) {
 		let res = bundleUMD(config,umdBuilds);
 		let outputPath = path.join(config.to,"umd","bundle.js");
 		try {
 			fs.writeFileSync(outputPath,res.code,"utf-8");
 		}
 		catch (err) {
-			return showError(`UMD Bundle (${ outputPath }) could not be created.`);
+			return showError(`UMD bundle (${ outputPath }) could not be created.`);
 		}
 	}
 
@@ -228,34 +263,33 @@ function checkArgsAndConfig() {
 		}
 	}
 
-	// targeting UMD build format?
-	if (config.buildUMD) {
-		// path specified to UMD dependency map?
-		if (typeof config.depMap == "string") {
-			// path is invalid?
-			if (!checkPath(config.depMap)) {
-				return showError(`Dependency map (${ config.depMap }) is missing or inaccessible.`);
-			}
+	// path specified to UMD dependency map?
+	if (typeof config.depMap == "string") {
+		// path is invalid?
+		if (!checkPath(config.depMap)) {
+			return showError(`Dependency map (${ config.depMap }) is missing or inaccessible.`);
+		}
 
-			// load UMD dependency map
-			let json;
-			try {
-				json = JSON.parse(fs.readFileSync(config.depMap,"utf-8"));
-				// need to find config in a package.json?
-				if (/package\.json$/.test(config.depMap)) {
-					json = json["mz-dependencies"];
-					// "mz-config" key is missing or not an object?
-					if (!json || typeof json != "object") {
-						throw true;
-					}
+		// load UMD dependency map
+		let json;
+		try {
+			json = JSON.parse(fs.readFileSync(config.depMap,"utf-8"));
+			// need to find config in a package.json?
+			if (/package\.json$/.test(config.depMap)) {
+				json = json["mz-dependencies"];
+				// "mz-config" key is missing or not an object?
+				if (!json || typeof json != "object") {
+					throw true;
 				}
 			}
-			catch (err) {
-				return showError(`Invalid/missing dependency map (${ config.depMap }).`);
-			}
-			config.depMap = json;
 		}
-		else if (!("depMap" in config)) {
+		catch (err) {
+			return showError(`Invalid/missing dependency map (${ config.depMap }).`);
+		}
+		config.depMap = json;
+	}
+	else if (!("depMap" in config)) {
+		if (config.buildUMD) {
 			return showError("UMD build format requires dependency map.",/*includeHelp=*/true);
 		}
 	}
@@ -365,6 +399,7 @@ function defaultCLIConfig({
 	recursive,
 	buildESM,
 	buildUMD,
+	generateIndex = false,
 	...other
 } = {}) {
 	// params override configs
@@ -379,7 +414,11 @@ function defaultCLIConfig({
 	buildESM = params["build-esm"] || buildESM;
 	buildUMD = params["build-umd"] || buildUMD;
 
-	return { from, to, recursive, buildESM, buildUMD, skip, copyOnSkip, depMap, bundleUMDPath, ...other, };
+	return {
+		from, to, recursive, buildESM, buildUMD, skip,
+		copyOnSkip, depMap, bundleUMDPath, generateIndex,
+		...other,
+	};
 }
 
 function resolvePath(pathStr) {

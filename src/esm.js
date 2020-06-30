@@ -1,6 +1,7 @@
 "use strict";
 
 var T = require("@babel/types");
+var { default: template, } = require("@babel/template");
 var { default: generate, } = require("@babel/generator");
 
 var {
@@ -17,6 +18,7 @@ var {
 
 module.exports = build;
 module.exports.build = build;
+module.exports.index = index;
 
 
 // ******************************
@@ -33,12 +35,13 @@ function build(config,pathStr,code,depMap) {
 	for (let req of convertRequires) {
 		// normalize dependency path
 		let [ , origSpecifierPath, ] = splitPath(config.from,req.specifier);
+
 		let specifierPath = addRelativeCurrentDir(origSpecifierPath);
 		if (!(specifierPath in depMap)) {
 			specifierPath = origSpecifierPath;
 		}
 		if (config[".mjs"]) {
-			specifierPath = specifierPath.replace(/\.js$/,".mjs");
+			specifierPath = specifierPath.replace(/\.c?js$/,".mjs");
 		}
 
 		if (req.esmType == "bare-import") {
@@ -152,7 +155,9 @@ function build(config,pathStr,code,depMap) {
 								T.ObjectPattern([
 									T.ObjectProperty(
 										T.Identifier(expt.binding.sourceName),
-										T.Identifier(expt.binding.target)
+										T.Identifier(expt.binding.target),
+										/*computed=*/false,
+										/*shorthand=*/(expt.binding.sourceName == expt.binding.target)
 									)
 								]),
 								expt.binding.source
@@ -209,4 +214,62 @@ function build(config,pathStr,code,depMap) {
 	programAST.program.directives.length = 0;
 
 	return generate(programAST);
+}
+
+function index(config,esmBuilds,depMap) {
+	var modulePath = "./index.js";
+	var moduleName = depMap[modulePath] || "Index";
+
+	// remove a dependency self-reference (if any)
+	depMap = Object.fromEntries(
+		Object.entries(depMap).filter(([ dPath, dName ]) => dPath != modulePath)
+	);
+
+	if (config[".mjs"]) {
+		modulePath = modulePath.replace(/\.c?js$/,".mjs");
+	}
+
+	// start with empty program
+	var esmAST = T.File(template.program("")());
+
+	var dependencies = Object.entries(depMap);
+	for (let [ depPath, depName, ] of dependencies) {
+		if (config[".mjs"]) {
+			depPath = depPath.replace(/\.c?js$/,".mjs");
+		}
+		if (config.exportDefaultFrom) {
+			esmAST.program.body.push(
+				T.ExportNamedDeclaration(
+					null,
+					[
+						T.ExportDefaultSpecifier(T.Identifier(depName)),
+					],
+					T.StringLiteral(depPath)
+				)
+			);
+		}
+		else {
+			esmAST.program.body.push(
+				T.ImportDeclaration(
+					[
+						(config.namespaceImport ?
+							T.ImportNamespaceSpecifier(T.Identifier(depName)) :
+							T.ImportDefaultSpecifier(T.Identifier(depName))
+						),
+					],
+					T.StringLiteral(depPath)
+				),
+				T.ExportNamedDeclaration(
+					null,
+					[
+						T.ExportSpecifier(
+							T.Identifier(depName)
+						),
+					]
+				)
+			);
+		}
+	}
+
+	return { ...generate(esmAST), ast: esmAST, refDeps: depMap, modulePath, moduleName, };
 }

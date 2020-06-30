@@ -24,6 +24,7 @@ var {
 module.exports = build;
 module.exports.build = build;
 module.exports.bundle = bundle;
+module.exports.index = index;
 module.exports.sortDependencies = sortDependencies;
 
 
@@ -44,6 +45,17 @@ function build(config,pathStr,code,depMap) {
 	var [ , modulePath, ] = splitPath(config.from,pathStr);
 	modulePath = addRelativeCurrentDir(modulePath);
 	var moduleName = depMap[modulePath];
+
+	// if unknown module?
+	if (!moduleName) {
+		if (config.ignoreUnknownDependency) {
+			moduleName = generateName();
+			depMap[modulePath] = moduleName;
+		}
+		else {
+			throw `Unknown module: ${ modulePath }`;
+		}
+	}
 	var refDeps = {};
 
 	// convert all requires to UMD dependencies
@@ -66,7 +78,7 @@ function build(config,pathStr,code,depMap) {
 				depMap[specifierPath] = depName;
 			}
 			else {
-				throw `Unknown UMD dependency: ${ req.specifier }`;
+				throw `Unknown dependency: ${ req.specifier }`;
 			}
 		}
 
@@ -173,7 +185,7 @@ function build(config,pathStr,code,depMap) {
 
 				// set dependencies and named parameters
 				var dependencies = Object.entries(refDeps);
-				var funcPath = callExprPath.get("arguments.3");
+				var defFuncPath = callExprPath.get("arguments.3");
 				if (dependencies.length > 0) {
 					let dependenciesPath = callExprPath.get("arguments.2");
 					for (let [ depPath, depName, ] of dependencies) {
@@ -186,7 +198,7 @@ function build(config,pathStr,code,depMap) {
 						);
 
 						// add named parameter
-						funcPath.node.params.push(T.Identifier(depName));
+						defFuncPath.node.params.push(T.Identifier(depName));
 					}
 				}
 			},
@@ -198,14 +210,14 @@ function build(config,pathStr,code,depMap) {
 	programPath.unshiftContainer("body",umdWrapper);
 
 	// get reference to UMD definition function
-	var defFuncPath = programPath.get("body.0.expression.arguments.3.body");
+	var defFuncBodyPath = programPath.get("body.0.expression.arguments.3.body");
 
 	// add strict-mode directive to UMD definition function?
 	if (
 		programAST.program.directives.length > 0 &&
 		programAST.program.directives[0].value.value == "use strict"
 	) {
-		defFuncPath.node.directives.push(
+		defFuncBodyPath.node.directives.push(
 			T.Directive(T.DirectiveLiteral("use strict"))
 		);
 		programAST.program.directives.shift();
@@ -215,11 +227,11 @@ function build(config,pathStr,code,depMap) {
 	while (programAST.program.body.length > 1) {
 		let stmt = programPath.get(`body.1`);
 		let newStmt = T.cloneDeep(stmt.node);
-		defFuncPath.pushContainer("body",newStmt);
+		defFuncBodyPath.pushContainer("body",newStmt);
 		stmt.remove();
 	}
 
-	return { ...generate(programAST), ast: programAST, refDeps, modulePath, };
+	return { ...generate(programAST), ast: programAST, refDeps, modulePath, moduleName, };
 }
 
 function bundle(config,umdBuilds) {
@@ -267,6 +279,76 @@ function bundle(config,umdBuilds) {
 	}
 
 	return generate(umdBundleAST);
+}
+
+function index(config,umdBuilds,depMap) {
+	var modulePath = "./index.js";
+	var moduleName = depMap[modulePath] || "Index";
+	// remove a dependency self-reference (if any)
+	depMap = Object.fromEntries(
+		Object.entries(depMap).filter(([ dPath, dName ]) => dPath != modulePath)
+	);
+
+	// make sure dependencies are ordered correctly
+	umdBuilds = sortDependencies(umdBuilds);
+
+	// construct UMD from template
+	var umdAST = parse(UMDTemplate);
+	traverse(umdAST,{
+		Program: {
+			exit(path) {
+				var callExprPath = path.get("body.0.expression");
+
+				// set module-name
+				callExprPath.get("arguments.0").replaceWith(T.StringLiteral(moduleName));
+
+				// set dependencies and named parameters
+				var dependencies = Object.entries(depMap);
+				var defFuncPath = callExprPath.get("arguments.3");
+				var defFuncBodyPath = defFuncPath.get("body");
+
+				var returnObjectContents = [];
+
+				if (dependencies.length > 0) {
+					let dependenciesPath = callExprPath.get("arguments.2");
+					for (let [ depPath, depName, ] of dependencies) {
+						// add dependency entry
+						dependenciesPath.node.properties.push(
+							T.ObjectProperty(
+								T.StringLiteral(depPath),
+								T.StringLiteral(depName)
+							)
+						);
+
+						// add named parameter
+						defFuncPath.node.params.push(T.Identifier(depName));
+
+						// add re-export assignment statement to function body
+						returnObjectContents.push(
+							T.ObjectProperty(
+								T.Identifier(depName),
+								T.Identifier(depName),
+								/*computed=*/false,
+								/*shorthand=*/true
+							)
+						);
+					}
+				}
+
+				// return substitute module-exports target
+				defFuncBodyPath.pushContainer("body",
+					T.ReturnStatement(T.ObjectExpression(returnObjectContents))
+				);
+
+				// add strict mode directive
+				defFuncBodyPath.node.directives.push(
+					T.Directive(T.DirectiveLiteral("use strict"))
+				);
+			},
+		}
+	});
+
+	return { ...generate(umdAST), ast: umdAST, refDeps: depMap, modulePath, moduleName, };
 }
 
 function sortDependencies(umdBuilds) {

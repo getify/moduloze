@@ -1,13 +1,16 @@
 "use strict";
 
 var buildUMD = require("./umd.js");
-var { bundle: bundleUMD, } = require("./umd.js");
+var { bundle: bundleUMD, index: umdIndex, } = require("./umd.js");
 var buildESM = require("./esm.js");
+var { index: esmIndex, } = require("./esm.js");
 
 module.exports = build;
 module.exports.build = build;
 module.exports.defaultLibConfig = defaultLibConfig;
 module.exports.bundleUMD = bundleUMD;
+module.exports.umdIndex = umdIndex;
+module.exports.esmIndex = esmIndex;
 
 function build(config,pathStr,code,depMap = {}) {
 	config = defaultLibConfig(config);
@@ -28,12 +31,14 @@ function defaultLibConfig({
 	ignoreUnknownDependency = false,
 	".mjs": renameMJS = false,
 	namespaceImport = false,
+	exportDefaultFrom = false,
 	...otherConfig
 } = {}) {
 	return {
 		ignoreUnknownDependency,
 		".mjs": renameMJS,
 		namespaceImport,
+		exportDefaultFrom,
 		...otherConfig,
 	};
 }
