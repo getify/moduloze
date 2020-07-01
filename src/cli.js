@@ -79,106 +79,111 @@ function CLI() {
 	var umdBuilds = [];
 	var esmBuilds = [];
 
-	// build each file (for each format)
-	for (let [ basePath, relativePath, ] of inputFiles) {
-		let code = fs.readFileSync(path.join(basePath,relativePath),"utf-8");
-		let res = build(config,relativePath,code,knownDeps);
+	try {
+		// build each file (for each format)
+		for (let [ basePath, relativePath, ] of inputFiles) {
+			let code = fs.readFileSync(path.join(basePath,relativePath),"utf-8");
+			let res = build(config,relativePath,code,knownDeps);
 
-		// save UMD build (for bundling and/or catch-all generation)?
-		if (
-			res.umd &&
-			(
-				config.bundleUMDPath ||
-				config.generateIndex
-			)
-		) {
-			umdBuilds.push(res.umd);
-		}
-		// save ESM build (for catch-all generation)?
-		else if (res.esm && config.generateIndex) {
-			esmBuilds.push(res.esm);
+			// save UMD build (for bundling and/or catch-all generation)?
+			if (
+				res.umd &&
+				(
+					config.bundleUMDPath ||
+					config.generateIndex
+				)
+			) {
+				umdBuilds.push(res.umd);
+			}
+			// save ESM build (for catch-all generation)?
+			else if (res.esm && config.generateIndex) {
+				esmBuilds.push(res.esm);
+			}
+
+			// process each output format
+			for (let format of [ "esm", "umd", ]) {
+				if (res[format]) {
+					let outputPath = path.join(config.to,format,relativePath);
+					if (format == "esm" && config[".mjs"]) {
+						outputPath = outputPath.replace(/\.js$/,".mjs");
+					}
+					let outputDir = path.dirname(outputPath);
+					if (!mkdir(outputDir)) {
+						throw new Error(`Output directory (${ outputDir }) could not be created.`);
+					}
+					try {
+						fs.writeFileSync(outputPath,res[format].code,"utf-8");
+					}
+					catch (err) {
+						throw new Error(`Output file (${ outputPath }) could not be created.`);
+					}
+				}
+			}
 		}
 
-		// process each output format
-		for (let format of [ "esm", "umd", ]) {
-			if (res[format]) {
-				let outputPath = path.join(config.to,format,relativePath);
-				if (format == "esm" && config[".mjs"]) {
-					outputPath = outputPath.replace(/\.js$/,".mjs");
-				}
-				let outputDir = path.dirname(outputPath);
-				if (!mkdir(outputDir)) {
-					return showError(`Output directory (${ outputDir }) could not be created.`);
-				}
+		// generate the catch-all index for each build format
+		if (config.generateIndex) {
+			if (config.buildUMD) {
+				let indexBuild = umdIndex(config,umdBuilds,knownDeps);
+				umdBuilds.push(indexBuild);
+				let outputPath = path.join(config.to,"umd",indexBuild.modulePath);
 				try {
-					fs.writeFileSync(outputPath,res[format].code,"utf-8");
+					fs.writeFileSync(outputPath,indexBuild.code,"utf-8");
 				}
 				catch (err) {
-					return showError(`Output file (${ outputPath }) could not be created.`);
+					throw new Error(`Generated index (${ outputPath }) could not be created.`);
+				}
+			}
+			if (config.buildESM) {
+				let indexBuild = esmIndex(config,esmBuilds,knownDeps);
+				esmBuilds.push(indexBuild);
+				let outputPath = path.join(config.to,"esm",indexBuild.modulePath);
+				try {
+					fs.writeFileSync(outputPath,indexBuild.code,"utf-8");
+				}
+				catch (err) {
+					throw new Error(`Generated index (${ outputPath }) could not be created.`);
 				}
 			}
 		}
-	}
 
-	// generate the catch-all index for each build format
-	if (config.generateIndex) {
-		if (config.buildUMD) {
-			let indexBuild = umdIndex(config,umdBuilds,knownDeps);
-			umdBuilds.push(indexBuild);
-			let outputPath = path.join(config.to,"umd",indexBuild.modulePath);
+		// need to bundle all the UMDs together?
+		if (config.bundleUMDPath && umdBuilds.length > 0) {
+			let res = bundleUMD(config,umdBuilds);
+			let outputPath = path.join(config.to,"umd","bundle.js");
 			try {
-				fs.writeFileSync(outputPath,indexBuild.code,"utf-8");
+				fs.writeFileSync(outputPath,res.code,"utf-8");
 			}
 			catch (err) {
-				return showError(`Generated index (${ outputPath }) could not be created.`);
+				throw new Error(`UMD bundle (${ outputPath }) could not be created.`);
 			}
 		}
-		if (config.buildESM) {
-			let indexBuild = esmIndex(config,esmBuilds,knownDeps);
-			esmBuilds.push(indexBuild);
-			let outputPath = path.join(config.to,"esm",indexBuild.modulePath);
-			try {
-				fs.writeFileSync(outputPath,indexBuild.code,"utf-8");
-			}
-			catch (err) {
-				return showError(`Generated index (${ outputPath }) could not be created.`);
-			}
-		}
-	}
 
-	// need to bundle all the UMDs together?
-	if (config.bundleUMDPath && umdBuilds.length > 0) {
-		let res = bundleUMD(config,umdBuilds);
-		let outputPath = path.join(config.to,"umd","bundle.js");
-		try {
-			fs.writeFileSync(outputPath,res.code,"utf-8");
-		}
-		catch (err) {
-			return showError(`UMD bundle (${ outputPath }) could not be created.`);
-		}
-	}
+		// copy any skipped files?
+		if (config.copyFiles && config.copyFiles.length > 0) {
+			for (let filePathStr of config.copyFiles) {
+				let [ basePath, relativePath, ] = splitPath(config.from,filePathStr);
+				let fromPathStr = path.join(basePath,relativePath);
+				let contents = fs.readFileSync(fromPathStr);
+				for (let format of [ "esm", "umd", ]) {
+					if (
+						(format == "esm" && config.buildESM) ||
+						(format == "umd" && config.buildUMD)
+					) {
+						let toPathStr = path.resolve(path.join(config.to,format),relativePath);
+						let toDir = path.dirname(toPathStr);
 
-	// copy any skipped files?
-	if (config.copyFiles && config.copyFiles.length > 0) {
-		for (let filePathStr of config.copyFiles) {
-			let [ basePath, relativePath, ] = splitPath(config.from,filePathStr);
-			let fromPathStr = path.join(basePath,relativePath);
-			let contents = fs.readFileSync(fromPathStr);
-			for (let format of [ "esm", "umd", ]) {
-				if (
-					(format == "esm" && config.buildESM) ||
-					(format == "umd" && config.buildUMD)
-				) {
-					let toPathStr = path.resolve(path.join(config.to,format),relativePath);
-					let toDir = path.dirname(toPathStr);
-
-					if (!mkdir(toDir)) {
-						return showError(`While copying skipped file (${ toPathStr }), directory (${ toDir }) could not be created.`);
+						if (!mkdir(toDir)) {
+							throw new Error(`While copying skipped file (${ toPathStr }), directory (${ toDir }) could not be created.`);
+						}
+						fs.writeFileSync(toPathStr,contents);
 					}
-					fs.writeFileSync(toPathStr,contents);
 				}
 			}
 		}
+	}
+	catch (err) {
+		return showError(err);
 	}
 }
 
@@ -405,7 +410,9 @@ function defaultCLIConfig({
 	// params override configs
 	from = resolvePath(params.from || from || "./");
 	to = resolvePath(params.to || to || "./.mz-build");
-	depMap = resolvePath(params["dep-map"] || depMap || "./package.json");
+	depMap = (typeof depMap == "string" || typeof depMap == "undefined") ?
+		resolvePath(params["dep-map"] || depMap || "./package.json") :
+		depMap;
 	bundleUMDPath =
 		("bundle-umd" in params || "UMDBUNDLEPATH" in process.env) ?
 			resolvePath(params["bundle-umd"] || bundleUMDPath || "./umd/bundle.js") :

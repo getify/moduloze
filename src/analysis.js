@@ -50,7 +50,7 @@ function identifyRequiresAndExports(codePath,code) {
 					}
 					// non-string literals not supported
 					else {
-						throw "Unsupported: require(..) statement without a single string-literal argument.";
+						throw new Error("Unsupported: require(..) statement without a single string-literal argument");
 					}
 				}
 			}
@@ -74,7 +74,7 @@ function identifyRequiresAndExports(codePath,code) {
 						}
 					}
 					else {
-						throw "Unsupported: module.exports not used as an assignment target.";
+						throw new Error("Unsupported: module.exports not used as an assignment target");
 					}
 				}
 			}
@@ -107,7 +107,7 @@ function identifyRequiresAndExports(codePath,code) {
 						}
 					}
 					else {
-						throw "Unsupported: module.exports not used as an assignment target.";
+						throw new Error("Unsupported: module.exports not used as an assignment target");
 					}
 				}
 			}
@@ -264,7 +264,7 @@ function analyzeRequires(requireStatements,requireCalls) {
 						}
 
 						// if we get here, the `require(..)` wasn't of a supported form
-						throw "Unsupported: destructuring pattern not ESM import-compatible";
+						throw new Error("Unsupported: destructuring pattern not ESM import-compatible");
 					}
 
 					if (bindings.length > 0) {
@@ -285,7 +285,7 @@ function analyzeRequires(requireStatements,requireCalls) {
 				}
 
 				// if we get here, the `require(..)` wasn't of a supported form
-				throw "Unsupported: variable declaration not ESM import-compatible";
+				throw new Error("Unsupported: variable declaration not ESM import-compatible");
 			}
 
 			continue;
@@ -395,7 +395,7 @@ function analyzeRequires(requireStatements,requireCalls) {
 					}
 
 					// if we get here, the `require(..)` wasn't of a supported form
-					throw "Unsupported: destructuring pattern not ESM import-compatible";
+					throw new Error("Unsupported: destructuring pattern not ESM import-compatible");
 				}
 
 				if (bindings.length > 0) {
@@ -415,7 +415,7 @@ function analyzeRequires(requireStatements,requireCalls) {
 		}
 
 		// if we get here, the `require(..)` wasn't of a supported form
-		throw "Unsupported: require(..) statement not ESM import-compatible";
+		throw new Error("Unsupported: require(..) statement not ESM import-compatible");
 	}
 
 	return convertRequires;
@@ -545,7 +545,7 @@ function analyzeExports(exportStatements,exportAssignments) {
 		}
 
 		// if we get here, the exports/module.exports wasn't of a supported form
-		throw "Unsupported: exports expression not ESM export-compatible";
+		throw new Error("Unsupported: exports expression not ESM export-compatible");
 	}
 
 	return convertExports;

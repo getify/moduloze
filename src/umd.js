@@ -53,7 +53,7 @@ function build(config,pathStr,code,depMap) {
 			depMap[modulePath] = moduleName;
 		}
 		else {
-			throw `Unknown module: ${ modulePath }`;
+			throw new Error(`Unknown module: ${ modulePath }`);
 		}
 	}
 	var refDeps = {};
@@ -78,7 +78,7 @@ function build(config,pathStr,code,depMap) {
 				depMap[specifierPath] = depName;
 			}
 			else {
-				throw `Unknown dependency: ${ req.specifier }`;
+				throw new Error(`Unknown dependency: ${ req.specifier }`);
 			}
 		}
 
