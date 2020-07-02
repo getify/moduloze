@@ -116,11 +116,15 @@ function build(config,pathStr,code,depMap) {
 			);
 		}
 		else if (req.umdType == "indirect-target") {
+			let target = (typeof req.binding.target == "string") ?
+				T.Identifier(req.binding.target) :
+				T.clone(req.binding.target,/*deep=*/true,/*withoutLoc=*/true);
+
 			req.context.statement.replaceWith(
 				T.ExpressionStatement(
 					T.AssignmentExpression(
 						"=",
-						T.Identifier(req.binding.target),
+						target,
 						T.Identifier(depName)
 					)
 				)

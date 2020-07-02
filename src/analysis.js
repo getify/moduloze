@@ -84,16 +84,10 @@ function identifyRequiresAndExports(codePath,code) {
 				// exports?
 				if (
 					path.node.name == "exports" &&
-					// NOT x.exports form, and not part of a computed member-expression?
-					// note: exports.x is totally allowed, but x.exports
-					//   isn't an export form we support
-					!(
-						T.isMemberExpression(path.parent) &&
-						(
-							path.parent.computed ||
-							path.parent.property == path.node
-						)
-					)
+					// NOT part of a member expression like x.exports or x[exports]?
+					// note: exports.x form is recognized, but x.exports and x[exports]
+					//   aren't relevant export forms
+					!T.isMemberExpression(path.parent,{ property: path.node, })
 				) {
 					// used as a left-hand assignment target?
 					if (isAssignmentTarget(path)) {
@@ -161,7 +155,7 @@ function analyzeRequires(requireStatements,requireCalls) {
 
 				// normal identifier declaration? var x = ..
 				if (T.isIdentifier(declNode.id)) {
-					// call as initialization assignment? var x = require("..")
+					// call as initialization assignment? var x = require(..)
 					if (
 						T.isCallExpression(declNode.init) &&
 						stmtReqCalls.find(p => p.node == declNode.init)
@@ -187,17 +181,15 @@ function analyzeRequires(requireStatements,requireCalls) {
 						continue;
 					}
 					else if (
-						// require("..") is part of a simple member expression?
-						T.isMemberExpression(declNode.init) &&
+						// require(..) is part of a simple member expression?
+						T.isMemberExpression(declNode.init,{ computed: false, }) &&
 						stmtReqCalls.find(p => p.node == declNode.init.object) &&
 						(
 							// single property expression via . operator?
-							// x = require("..").x
-							(
-								!declNode.init.computed &&
-								T.isIdentifier(declNode.init.property)
-							) ||
+							// x = require(..).x
+							T.isIdentifier(declNode.init.property) ||
 							// single property expression via [".."] operator?
+							// x = require(..)["x"]
 							T.isStringLiteral(declNode.init.property)
 						)
 					) {
@@ -229,12 +221,12 @@ function analyzeRequires(requireStatements,requireCalls) {
 							continue;
 						}
 					}
-					// otherwise, a variable declaration without a `require(..)` in it
+					// otherwise, a variable declaration without a require(..) in it
 					else {
 						continue;
 					}
 				}
-				// destructuring assignment? var { x } = require("..")
+				// destructuring assignment? var { x } = require(..)
 				else if (
 					T.isObjectPattern(declNode.id) &&
 					T.isCallExpression(declNode.init) &&
@@ -284,7 +276,7 @@ function analyzeRequires(requireStatements,requireCalls) {
 					}
 				}
 
-				// if we get here, the `require(..)` wasn't of a supported form
+				// if we get here, the require(..) wasn't of a supported form
 				throw new Error("Unsupported: variable declaration not ESM import-compatible");
 			}
 
@@ -299,7 +291,7 @@ function analyzeRequires(requireStatements,requireCalls) {
 
 			// regular identifier assignment? x = ..
 			if (T.isIdentifier(assignment.left)) {
-				// simple call assignment? x = require("..")
+				// simple call assignment? x = require(..)
 				if (stmtReqCalls.find(p => p.node == assignment.right)) {
 					let call = assignment.right;
 					let specifier = call.arguments[0].extra.rawValue;
@@ -311,6 +303,7 @@ function analyzeRequires(requireStatements,requireCalls) {
 						esmType: "default-import-indirect",
 						umdType: "indirect-target",
 						binding: {
+							source: "default",
 							target,
 							uniqueTarget: stmt.scope.generateUidIdentifier("imp").name,
 						},
@@ -322,18 +315,15 @@ function analyzeRequires(requireStatements,requireCalls) {
 					continue;
 				}
 				else if (
-					// require("..") part of a simple member expression?
-					T.isMemberExpression(assignment.right) &&
+					// require(..) part of a simple member expression?
+					T.isMemberExpression(assignment.right,{ computed: false, }) &&
 					stmtReqCalls.find(p => p.node == assignment.right.object) &&
 					(
 						// single property expression via . operator?
-						// x = require("..").x
-						(
-							!assignment.right.computed &&
-							T.isIdentifier(assignment.right.property)
-						) ||
+						// x = require(..).x
+						T.isIdentifier(assignment.right.property) ||
 						// single property expression via [".."] operator?
-						// x = require("..")[".."]
+						// x = require(..)[".."]
 						T.isStringLiteral(assignment.right.property)
 					)
 				) {
@@ -365,7 +355,7 @@ function analyzeRequires(requireStatements,requireCalls) {
 					}
 				}
 			}
-			// destructuring assignment? { x } = require("..")
+			// destructuring assignment? { x } = require(..)
 			else if (
 				T.isObjectPattern(assignment.left) &&
 				stmtReqCalls.find(p => p.node == assignment.right)
@@ -412,9 +402,78 @@ function analyzeRequires(requireStatements,requireCalls) {
 					continue;
 				}
 			}
+			// default or named re-export?
+			// ie, module.exports = require(..).. OR module.exports.x = require(..)..
+			else if (
+				isModuleExports(assignment.left) ||
+				(
+					T.isMemberExpression(assignment.left,{ computed: false, }) &&
+					(
+						T.isIdentifier(assignment.left.property) ||
+						T.isStringLiteral(assignment.left.property)
+					) &&
+					isModuleExports(assignment.left.object)
+				)
+			) {
+				let target = assignment.left;
+
+				// require(..) by itself?
+				if (stmtReqCalls.find(p => p.node == assignment.right)) {
+					let call = assignment.right;
+					let specifier = call.arguments[0].extra.rawValue;
+
+					// console.log(`import * as ${ target$1 } from ${ specifier }; ${ target } = ${ target$1 };`);
+					// console.log(`import ${ target$1 } from ${ specifier }; ${ target } = ${ target$1 };`);
+					convertRequires.push({
+						esmType: "default-import-indirect",
+						umdType: "indirect-target",
+						binding: {
+							source: "default",
+							target,
+							uniqueTarget: stmt.scope.generateUidIdentifier("imp").name,
+						},
+						specifier,
+						context: {
+							statement: stmt,
+						},
+					});
+					continue;
+				}
+				// require(..).x form?
+				else if (
+					T.isMemberExpression(assignment.right,{ computed: false, }) &&
+					stmtReqCalls.find(p => p.node == assignment.right.object)
+				) {
+					let call = assignment.right.object;
+					let specifier = call.arguments[0].extra.rawValue;
+					let source =
+						T.isIdentifier(assignment.right.property) ?
+							assignment.right.property.name :
+						T.isStringLiteral(assignment.right.property) ?
+							assignment.right.property.value :
+						undefined;
+					if (source) {
+						// console.log(`import { ${ binding } } from ${ specifier }; ${ target } = ${ target$1 };`);
+						convertRequires.push({
+							esmType: "named-import-indirect",
+							umdType: "indirect-source-target",
+							binding: {
+								source,
+								target,
+								uniqueTarget: stmt.scope.generateUidIdentifier("imp").name,
+							},
+							specifier,
+							context: {
+								statement: stmt,
+							},
+						});
+						continue;
+					}
+				}
+			}
 		}
 
-		// if we get here, the `require(..)` wasn't of a supported form
+		// if we get here, the require(..) wasn't of a supported form
 		throw new Error("Unsupported: require(..) statement not ESM import-compatible");
 	}
 
@@ -433,9 +492,9 @@ function analyzeExports(exportStatements,exportAssignments) {
 			T.isAssignmentExpression(stmt.node.expression) &&
 			stmtExpAssignments.length == 1
 		) {
-			let assg = stmt.node.expression;
-			let target = assg.left;
-			let source = assg.right;
+			let assignment = stmt.node.expression;
+			let target = assignment.left;
+			let source = assignment.right;
 
 			if (target == stmtExpAssignments[0].node) {
 				// assigning to `exports` or `module.exports`?
@@ -475,7 +534,7 @@ function analyzeExports(exportStatements,exportAssignments) {
 					}
 				}
 			}
-			else if (T.isMemberExpression(target,{ object: stmtExpAssignments[0].node, })) {
+			else if (T.isMemberExpression(target,{ object: stmtExpAssignments[0].node, computed: false, })) {
 				let exportName =
 					T.isIdentifier(target.property) ? target.property.name :
 					T.isStringLiteral(target.property) ? target.property.value :
@@ -555,13 +614,10 @@ function isModuleExports(node) {
 	return (
 		T.isIdentifier(node,{ name: "exports", }) ||
 		(
-			T.isMemberExpression(node) &&
+			T.isMemberExpression(node,{ computed: false, }) &&
 			T.isIdentifier(node.object,{ name: "module", }) &&
 			(
-				(
-					!node.computed &&
-					T.isIdentifier(node.property,{ name: "exports", })
-				) ||
+				T.isIdentifier(node.property,{ name: "exports", }) ||
 				T.isStringLiteral(node.property,{ value: "exports", })
 			)
 		)

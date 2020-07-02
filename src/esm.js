@@ -31,11 +31,122 @@ function build(config,pathStr,code,depMap) {
 		convertExports,
 	} = identifyRequiresAndExports(pathStr,code);
 
+	// find any combo statements that have both a require and an export in it
+	var stmts = new Map();
+	var convertCombos = new Map();
+	for (let [ idx, req, ] of convertRequires.entries()) {
+		if (!stmts.has(req.context.statement)) {
+			stmts.set(req.context.statement,{ reqIdxs: [], reqs: [], });
+		}
+		let entry = stmts.get(req.context.statement);
+		entry.reqIdxs.push(idx);
+		entry.reqs.push(req);
+	}
+	for (let [ idx, expt, ] of convertExports.entries()) {
+		// found a combo statement?
+		if (stmts.has(expt.context.statement)) {
+			let { reqIdxs, reqs, } = stmts.get(expt.context.statement);
+
+			// remove original export entry
+			convertExports.splice(idx,1);
+
+			// remove original require entry/entries
+			convertRequires = convertRequires.filter((entry,idx) => !reqIdxs.includes(idx));
+
+			if (!convertCombos.has(expt.context.statement)) {
+				convertCombos.set(expt.context.statement,{
+					requires: [ ...reqs, ],
+					exports: [],
+				});
+			}
+			convertCombos.get(expt.context.statement).exports.push(expt);
+		}
+	}
+
+	// convert all combo require/export statements
+	for (let [ stmt, combo, ] of convertCombos.entries()) {
+		let req = combo.requires[0];
+		// normalize dependency path
+		let [ , origSpecifierPath, ] = splitPath(config.from,req.specifier);
+		let specifierPath = addRelativeCurrentDir(origSpecifierPath);
+		if (!(specifierPath in depMap)) {
+			specifierPath = origSpecifierPath;
+		}
+		if (config[".mjs"]) {
+			specifierPath = specifierPath.replace(/\.c?js$/,".mjs");
+		}
+
+		let expt = combo.exports[0];
+
+		// combined form? export { x [as y] } from ".."
+		if (
+			(
+				req.esmType == "default-import-indirect" ||
+				req.esmType == "named-import-indirect"
+			) &&
+			(
+				expt.esmType == "named-declaration-export" ||
+				expt.esmType == "destructured-declaration-export"
+			)
+		) {
+			stmt.replaceWith(
+				T.ExportNamedDeclaration(
+					null,
+					[
+						T.ExportSpecifier(
+							T.Identifier(req.binding.source),
+							T.Identifier(expt.binding.target)
+						),
+					],
+					T.StringLiteral(specifierPath)
+				)
+			);
+		}
+		// default indirect? import * as x + export default x
+		else if (
+			req.esmType == "default-import-indirect" &&
+			expt.esmType == "default-export"
+		) {
+			let importTarget = T.Identifier(req.binding.uniqueTarget);
+
+			stmt.replaceWithMultiple([
+				T.ImportDeclaration(
+					[
+						// import * as x from .. ?
+						(config.namespaceImport ?
+							T.ImportNamespaceSpecifier(importTarget) :
+							// otherwise, import x from ..
+							T.ImportDefaultSpecifier(importTarget)
+						),
+					],
+					T.StringLiteral(specifierPath)
+				),
+				T.ExportDefaultDeclaration(importTarget)
+			]);
+		}
+		// otherwise, named indirect: import { x [as y] } + export { y }
+		else {
+			let importTarget = T.Identifier(req.binding.uniqueTarget);
+
+			stmt.replaceWithMultiple([
+				T.ImportDeclaration(
+					[
+						T.ImportSpecifier(
+							importTarget,
+							T.Identifier(req.binding.source)
+						),
+					],
+					T.StringLiteral(specifierPath)
+				),
+				T.ExportDefaultDeclaration(importTarget),
+			]);
+		}
+	}
+
 	// convert all requires to ESM imports
 	for (let req of convertRequires) {
 		// normalize dependency path
 		let [ , origSpecifierPath, ] = splitPath(config.from,req.specifier);
-
 		let specifierPath = addRelativeCurrentDir(origSpecifierPath);
 		if (!(specifierPath in depMap)) {
 			specifierPath = origSpecifierPath;
@@ -55,8 +166,10 @@ function build(config,pathStr,code,depMap) {
 			req.context.statement.replaceWith(
 				T.ImportDeclaration(
 					[
+						// import * as x from .. ?
 						(config.namespaceImport ?
 							T.ImportNamespaceSpecifier(T.Identifier(req.binding.target)) :
+							// otherwise, import x from ..
 							T.ImportDefaultSpecifier(T.Identifier(req.binding.target))
 						),
 					],
@@ -263,6 +376,7 @@ function index(config,esmBuilds,depMap) {
 					null,
 					[
 						T.ExportSpecifier(
+							T.Identifier(depName),
 							T.Identifier(depName)
 						),
 					]
