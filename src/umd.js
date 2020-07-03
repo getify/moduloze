@@ -239,8 +239,15 @@ function build(config,pathStr,code,depMap) {
 }
 
 function bundle(config,umdBuilds) {
-	// make sure dependencies are ordered correctly
-	umdBuilds = sortDependencies(umdBuilds);
+	try {
+		// make sure dependencies are ordered correctly
+		umdBuilds = sortDependencies(umdBuilds);
+	}
+	catch (err) {
+		if (!config.ignoreCircularDependency) {
+			throw new Error("Circular dependency not supported in UMD builds/bundles");
+		}
+	}
 
 	// construct UMD bundle from template
 	var programPath;
@@ -286,15 +293,22 @@ function bundle(config,umdBuilds) {
 }
 
 function index(config,umdBuilds,depMap) {
+	try {
+		// make sure dependencies are ordered correctly
+		umdBuilds = sortDependencies(umdBuilds);
+	}
+	catch (err) {
+		if (!config.ignoreCircularDependency) {
+			throw new Error("Circular dependency not supported in UMD builds/bundles");
+		}
+	}
+
 	var modulePath = "./index.js";
 	var moduleName = depMap[modulePath] || "Index";
 	// remove a dependency self-reference (if any)
 	depMap = Object.fromEntries(
 		Object.entries(depMap).filter(([ dPath, dName ]) => dPath != modulePath)
 	);
-
-	// make sure dependencies are ordered correctly
-	umdBuilds = sortDependencies(umdBuilds);
 
 	// construct UMD from template
 	var umdAST = parse(UMDTemplate);

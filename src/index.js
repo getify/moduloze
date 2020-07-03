@@ -29,6 +29,7 @@ function build(config,pathStr,code,depMap = {}) {
 
 function defaultLibConfig({
 	ignoreUnknownDependency = false,
+	ignoreCircularDependency = false,
 	".mjs": renameMJS = false,
 	namespaceImport = false,
 	exportDefaultFrom = false,
@@ -36,6 +37,7 @@ function defaultLibConfig({
 } = {}) {
 	return {
 		ignoreUnknownDependency,
+		ignoreCircularDependency,
 		".mjs": renameMJS,
 		namespaceImport,
 		exportDefaultFrom,
