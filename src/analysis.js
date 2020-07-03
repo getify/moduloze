@@ -125,6 +125,9 @@ function analyzeRequires(requireStatements,requireCalls) {
 	var convertRequires = [];
 
 	for (let stmt of requireStatements) {
+		if (!T.isProgram(stmt.parent)) {
+			throw new Error("Require statements must be at the top-level of the program");
+		}
 		let stmtReqCalls = requireCalls.get(stmt);
 
 		// standalone require(".."")?
@@ -484,6 +487,9 @@ function analyzeExports(exportStatements,exportAssignments) {
 	var convertExports = [];
 
 	for (let stmt of exportStatements) {
+		if (!T.isProgram(stmt.parent)) {
+			throw new Error("Exports expressions must be at the top-level of the program");
+		}
 		let stmtExpAssignments = exportAssignments.get(stmt);
 
 		// single export assignment?
