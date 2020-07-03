@@ -179,22 +179,15 @@ function analyzeRequires(requireStatements,requireCalls) {
 								statement: stmt,
 								declarator: decl,
 								declarationIdx: declIdx,
+								requireCall: decl.get("init"),
 							},
 						});
 						continue;
 					}
 					else if (
 						// require(..) is part of a simple member expression?
-						T.isMemberExpression(declNode.init,{ computed: false, }) &&
-						stmtReqCalls.find(p => p.node == declNode.init.object) &&
-						(
-							// single property expression via . operator?
-							// x = require(..).x
-							T.isIdentifier(declNode.init.property) ||
-							// single property expression via [".."] operator?
-							// x = require(..)["x"]
-							T.isStringLiteral(declNode.init.property)
-						)
+						isSimpleMemberExpression(declNode.init) &&
+						stmtReqCalls.find(p => p.node == declNode.init.object)
 					) {
 						let call = declNode.init.object;
 						let specifier = call.arguments[0].extra.rawValue;
@@ -219,6 +212,7 @@ function analyzeRequires(requireStatements,requireCalls) {
 									statement: stmt,
 									declarator: decl,
 									declarationIdx: declIdx,
+									requireCall: decl.get("init.object"),
 								},
 							});
 							continue;
@@ -273,6 +267,7 @@ function analyzeRequires(requireStatements,requireCalls) {
 								statement: stmt,
 								declarator: decl,
 								declarationIdx: declIdx,
+								requireCall: decl.get("init"),
 							},
 						});
 						continue;
@@ -313,22 +308,15 @@ function analyzeRequires(requireStatements,requireCalls) {
 						specifier,
 						context: {
 							statement: stmt,
+							requireCall: stmt.get("expression.right"),
 						},
 					});
 					continue;
 				}
 				else if (
 					// require(..) part of a simple member expression?
-					T.isMemberExpression(assignment.right,{ computed: false, }) &&
-					stmtReqCalls.find(p => p.node == assignment.right.object) &&
-					(
-						// single property expression via . operator?
-						// x = require(..).x
-						T.isIdentifier(assignment.right.property) ||
-						// single property expression via [".."] operator?
-						// x = require(..)[".."]
-						T.isStringLiteral(assignment.right.property)
-					)
+					isSimpleMemberExpression(assignment.right) &&
+					stmtReqCalls.find(p => p.node == assignment.right.object)
 				) {
 					let call = assignment.right.object;
 					let specifier = call.arguments[0].extra.rawValue;
@@ -352,6 +340,7 @@ function analyzeRequires(requireStatements,requireCalls) {
 							specifier,
 							context: {
 								statement: stmt,
+								requireCall: stmt.get("expression.right.object"),
 							},
 						});
 						continue;
@@ -400,6 +389,7 @@ function analyzeRequires(requireStatements,requireCalls) {
 						specifier,
 						context: {
 							statement: stmt,
+							requireCall: stmt.get("expression.right"),
 						},
 					});
 					continue;
@@ -438,6 +428,7 @@ function analyzeRequires(requireStatements,requireCalls) {
 						specifier,
 						context: {
 							statement: stmt,
+							requireCall: stmt.get("expression.right"),
 						},
 					});
 					continue;
@@ -468,6 +459,7 @@ function analyzeRequires(requireStatements,requireCalls) {
 							specifier,
 							context: {
 								statement: stmt,
+								requireCall: stmt.get("expression.right.object"),
 							},
 						});
 						continue;
@@ -477,7 +469,7 @@ function analyzeRequires(requireStatements,requireCalls) {
 		}
 
 		// if we get here, the require(..) wasn't of a supported form
-		throw new Error("Unsupported: require(..) statement not ESM import-compatible");
+		throw new Error("Unsupported: require(..) expression not ESM import-compatible");
 	}
 
 	return convertRequires;
@@ -519,6 +511,7 @@ function analyzeExports(exportStatements,exportAssignments) {
 							},
 							context: {
 								statement: stmt,
+								exportsExpression: stmt.get("expression.left"),
 							},
 						});
 						continue;
@@ -534,6 +527,7 @@ function analyzeExports(exportStatements,exportAssignments) {
 							},
 							context: {
 								statement: stmt,
+								exportsExpression: stmt.get("expression.left"),
 							},
 						});
 						continue;
@@ -563,6 +557,7 @@ function analyzeExports(exportStatements,exportAssignments) {
 							},
 							context: {
 								statement: stmt,
+								exportsExpression: stmt.get("expression.left.object"),
 							},
 						});
 						continue;
@@ -584,6 +579,7 @@ function analyzeExports(exportStatements,exportAssignments) {
 							},
 							context: {
 								statement: stmt,
+								exportsExpression: stmt.get("expression.left.object"),
 							},
 						});
 						continue;
@@ -601,6 +597,7 @@ function analyzeExports(exportStatements,exportAssignments) {
 							},
 							context: {
 								statement: stmt,
+								exportsExpression: stmt.get("expression.left.object"),
 							},
 						});
 						continue;
@@ -625,6 +622,24 @@ function isModuleExports(node) {
 			(
 				T.isIdentifier(node.property,{ name: "exports", }) ||
 				T.isStringLiteral(node.property,{ value: "exports", })
+			)
+		)
+	);
+}
+
+function isSimpleMemberExpression(node) {
+	return (
+		T.isMemberExpression(node) &&
+		(
+			// single property expression via . operator? x.y
+			(
+				!node.computed &&
+				T.isIdentifier(node.property)
+			) ||
+			// single property expression via [".."] operator? x["y"]
+			(
+				node.computed &&
+				T.isStringLiteral(node.property)
 			)
 		)
 	);

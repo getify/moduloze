@@ -93,7 +93,7 @@ function build(config,pathStr,code,depMap) {
 			// variable declaration different name than registered dependency-name?
 			if (depName != req.binding.target) {
 				// replace require(..) call with registered dependency-name
-				req.context.declarator.get("init").replaceWith(
+				req.context.requireCall.replaceWith(
 					T.Identifier(depName)
 				);
 			}
@@ -102,76 +102,34 @@ function build(config,pathStr,code,depMap) {
 				req.context.declarator.remove();
 			}
 		}
-		else if (req.umdType == "named-dependency") {
-			req.context.declarator.get("init").replaceWith(
-				T.MemberExpression(
-					T.Identifier(depName),
-					T.Identifier(req.binding.source)
-				)
-			);
-		}
-		else if (req.umdType == "destructured-dependency") {
-			req.context.declarator.get("init").replaceWith(
+		else {
+			// replace require(..) call with registered dependency-name
+			req.context.requireCall.replaceWith(
 				T.Identifier(depName)
 			);
 		}
-		else if (req.umdType == "indirect-target") {
-			let target = (typeof req.binding.target == "string") ?
-				T.Identifier(req.binding.target) :
-				T.clone(req.binding.target,/*deep=*/true,/*withoutLoc=*/true);
-
-			req.context.statement.replaceWith(
-				T.ExpressionStatement(
-					T.AssignmentExpression(
-						"=",
-						target,
-						T.Identifier(depName)
-					)
-				)
-			);
-		}
-		else if (req.umdType == "indirect-source-target") {
-			for (let binding of (Array.isArray(req.binding) ? req.binding : [req.binding,])) {
-				req.context.statement.insertBefore(
-					T.ExpressionStatement(
-						T.AssignmentExpression(
-							"=",
-							T.Identifier(binding.target),
-							T.MemberExpression(
-								T.Identifier(depName),
-								T.Identifier(binding.source)
-							)
-						)
-					)
-				);
-			}
-			req.context.statement.remove();
-		}
 	}
 
-	// setup substitute module-exports target
-	var $module$exports = programPath.scope.generateUidIdentifier("exp").name;
-	programPath.get("body.0").insertBefore(
-		T.VariableDeclaration(
-			"var",
-			[
-				T.VariableDeclarator(T.Identifier($module$exports),T.ObjectExpression([])),
-			]
-		)
-	);
-	programPath.get(`body.${ (programPath.node.body.length - 1) }`).insertAfter(
-		T.ReturnStatement(T.Identifier($module$exports))
-	);
+	if (convertExports.length > 0) {
+		// setup substitute module-exports target
+		var $module$exports = programPath.scope.generateUidIdentifier("exp").name;
+		programPath.unshiftContainer(
+			"body",
+			T.VariableDeclaration(
+				"var",
+				[
+					T.VariableDeclarator(T.Identifier($module$exports),T.ObjectExpression([])),
+				]
+			)
+		);
+		programPath.pushContainer(
+			"body",
+			T.ReturnStatement(T.Identifier($module$exports))
+		);
 
-	// convert all exports
-	for (let expt of convertExports) {
-		if (expt.umdType == "default-assignment") {
-			expt.context.statement.get("expression.left").replaceWith(
-				T.Identifier($module$exports)
-			);
-		}
-		else if (expt.umdType == "named-export") {
-			expt.context.statement.get("expression.left.object").replaceWith(
+		// convert all exports
+		for (let expt of convertExports) {
+			expt.context.exportsExpression.replaceWith(
 				T.Identifier($module$exports)
 			);
 		}
