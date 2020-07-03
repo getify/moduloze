@@ -4,5 +4,6 @@
 
 var path = require("path");
 var CLI = require(path.join("..","src","cli.js"));
+var packageJSON = require("../package.json");
 
-CLI();
+CLI(packageJSON.version);

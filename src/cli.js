@@ -9,7 +9,7 @@ var minimist = require("minimist");
 var mkdirp = require("mkdirp");
 var recursiveReadDir = require("recursive-readdir-sync");
 
-var packageJSON = require("../package.json");
+var programVersion;
 var { build, bundleUMD, umdIndex, esmIndex, defaultLibConfig, } = require("./index.js");
 var {
 	expandHomeDir,
@@ -52,7 +52,9 @@ module.exports.CLI = CLI;
 
 // ******************************
 
-function CLI() {
+function CLI(version = "0.0.0?") {
+	programVersion = version;
+
 	if (!loadConfig()) {
 		return;
 	}
@@ -381,7 +383,7 @@ function printHelp() {
 }
 
 function printVersion() {
-	console.log(`v${ packageJSON.version }`);
+	console.log(`v${ programVersion }`);
 }
 
 function showError(err,includeHelp = false) {
