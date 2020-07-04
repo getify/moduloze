@@ -105,7 +105,7 @@ function CLI(version = "0.0.0?") {
 			// process each output format
 			for (let format of [ "esm", "umd", ]) {
 				if (res[format]) {
-					let outputPath = path.join(config.to,format,res[format].modulePath);
+					let outputPath = path.join(config.to,format,res[format].pathStr);
 					let outputDir = path.dirname(outputPath);
 					if (!mkdir(outputDir)) {
 						throw new Error(`Output directory (${ outputDir }) could not be created.`);
@@ -125,7 +125,7 @@ function CLI(version = "0.0.0?") {
 			if (config.buildUMD) {
 				let indexBuild = umdIndex(config,umdBuilds,knownDeps);
 				umdBuilds.push(indexBuild);
-				let outputPath = path.join(config.to,"umd",indexBuild.modulePath);
+				let outputPath = path.join(config.to,"umd",indexBuild.pathStr);
 				try {
 					fs.writeFileSync(outputPath,indexBuild.code,"utf-8");
 				}
@@ -136,7 +136,7 @@ function CLI(version = "0.0.0?") {
 			if (config.buildESM) {
 				let indexBuild = esmIndex(config,esmBuilds,knownDeps);
 				esmBuilds.push(indexBuild);
-				let outputPath = path.join(config.to,"esm",indexBuild.modulePath);
+				let outputPath = path.join(config.to,"esm",indexBuild.pathStr);
 				try {
 					fs.writeFileSync(outputPath,indexBuild.code,"utf-8");
 				}

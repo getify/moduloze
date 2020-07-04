@@ -42,21 +42,23 @@ function build(config,pathStr,code,depMap) {
 		convertExports,
 	} = identifyRequiresAndExports(pathStr,code);
 
-	var [ , modulePath, ] = splitPath(config.from,pathStr);
-	modulePath = addRelativeCurrentDir(modulePath);
-	var moduleName = depMap[modulePath];
+	var [ , origModulePathStr, ] = splitPath(config.from,pathStr);
+	var modulePathStr = addRelativeCurrentDir(origModulePathStr);
+	var moduleName = depMap[modulePathStr];
 
 	// rename source file .cjs extension (per config)
-	modulePath = renameCJS(config,modulePath);
+	modulePathStr = renameCJS(config,modulePathStr);
 
 	// unknown module?
 	if (!moduleName) {
+		modulePathStr = origModulePathStr;
+
 		if (config.ignoreUnknownDependency) {
 			moduleName = generateName();
-			depMap[modulePath] = moduleName;
+			depMap[modulePathStr] = moduleName;
 		}
 		else {
-			throw new Error(`Unknown module: ${ modulePath }`);
+			throw new Error(`Unknown module: ${ modulePathStr }`);
 		}
 	}
 	var refDeps = {};
@@ -117,26 +119,24 @@ function build(config,pathStr,code,depMap) {
 
 	if (convertExports.length > 0) {
 		// setup substitute module-exports target
-		var $module$exports = programPath.scope.generateUidIdentifier("exp").name;
+		let $module$exports = T.Identifier(programPath.scope.generateUidIdentifier("exp").name);
 		programPath.unshiftContainer(
 			"body",
 			T.VariableDeclaration(
 				"var",
 				[
-					T.VariableDeclarator(T.Identifier($module$exports),T.ObjectExpression([])),
+					T.VariableDeclarator($module$exports,T.ObjectExpression([])),
 				]
 			)
 		);
 		programPath.pushContainer(
 			"body",
-			T.ReturnStatement(T.Identifier($module$exports))
+			T.ReturnStatement($module$exports)
 		);
 
 		// convert all exports
 		for (let expt of convertExports) {
-			expt.context.exportsExpression.replaceWith(
-				T.Identifier($module$exports)
-			);
+			expt.context.exportsExpression.replaceWith($module$exports);
 		}
 	}
 
@@ -198,7 +198,7 @@ function build(config,pathStr,code,depMap) {
 		stmt.remove();
 	}
 
-	return { ...generate(programAST), ast: programAST, refDeps, modulePath, moduleName, };
+	return { ...generate(programAST), ast: programAST, refDeps, pathStr: modulePathStr, name: moduleName, };
 }
 
 function bundle(config,umdBuilds) {
@@ -266,17 +266,17 @@ function index(config,umdBuilds,depMap) {
 		}
 	}
 
-	var modulePath = "./index.js";
-	var altModulePath = modulePath.replace(/\.js$/,".cjs");
-	var moduleName = depMap[modulePath || altModulePath] || "Index";
+	var modulePathStr = "./index.js";
+	var altModulePathStr = modulePathStr.replace(/\.js$/,".cjs");
+	var moduleName = depMap[modulePathStr || altModulePathStr] || "Index";
 
 	// remove a dependency self-reference (if any)
 	depMap = Object.fromEntries(
-		Object.entries(depMap).filter(([ dPath, dName ]) => (dPath != modulePath && dPath != altModulePath))
+		Object.entries(depMap).filter(([ dPath, dName ]) => (dPath != modulePathStr && dPath != altModulePathStr))
 	);
 
 	// handle any file extension renaming, per config
-	modulePath = renameCJS(config,modulePath);
+	modulePathStr = renameCJS(config,modulePathStr);
 
 	// construct UMD from template
 	var umdAST = parse(UMDTemplate);
@@ -337,7 +337,7 @@ function index(config,umdBuilds,depMap) {
 		}
 	});
 
-	return { ...generate(umdAST), ast: umdAST, refDeps: depMap, modulePath, moduleName, };
+	return { ...generate(umdAST), ast: umdAST, refDeps: depMap, pathStr: modulePathStr, name: moduleName, };
 }
 
 function sortDependencies(umdBuilds) {

@@ -31,43 +31,47 @@ function build(config,pathStr,code,depMap) {
 		convertExports,
 	} = identifyRequiresAndExports(pathStr,code);
 
-	var [ , origModulePath, ] = splitPath(config.from,pathStr);
-	var modulePath = addRelativeCurrentDir(origModulePath);
-	var moduleName = depMap[modulePath];
+	var [ , origModulePathStr, ] = splitPath(config.from,pathStr);
+	var modulePathStr = addRelativeCurrentDir(origModulePathStr);
+	var moduleName = depMap[modulePathStr];
 
 	// handle any file extension renaming, per config
-	modulePath = renameFileExtension(config,modulePath);
+	modulePathStr = renameFileExtension(config,modulePathStr);
 
 	// unknown module?
 	if (!moduleName) {
-		modulePath = origModulePath;
+		modulePathStr = origModulePathStr;
 
 		moduleName = generateName();
-		depMap[modulePath] = moduleName;
+		depMap[modulePathStr] = moduleName;
 	}
 	var refDeps = {};
+	var $module$exports;
+
 
 	// find any combo statements that have both a require and an export in it
-	var stmts = new Map();
+	var reqStmts = new Map();
 	var convertCombos = new Map();
 	for (let [ idx, req, ] of convertRequires.entries()) {
-		if (!stmts.has(req.context.statement)) {
-			stmts.set(req.context.statement,{ reqIdxs: [], reqs: [], });
+		if (!reqStmts.has(req.context.statement)) {
+			reqStmts.set(req.context.statement,{ reqIdxs: [], reqs: [], });
 		}
-		let entry = stmts.get(req.context.statement);
+		let entry = reqStmts.get(req.context.statement);
 		entry.reqIdxs.push(idx);
 		entry.reqs.push(req);
 	}
 	for (let [ idx, expt, ] of convertExports.entries()) {
 		// found a combo statement?
-		if (stmts.has(expt.context.statement)) {
-			let { reqIdxs, reqs, } = stmts.get(expt.context.statement);
+		if (reqStmts.has(expt.context.statement)) {
+			let { reqIdxs, reqs, } = reqStmts.get(expt.context.statement);
 
-			// remove original export entry
-			convertExports.splice(idx,1);
+			// unsert original require entries
+			for (let reqIdx of reqIdxs) {
+				convertRequires[reqIdx] = false;
+			}
 
-			// remove original require entry/entries
-			convertRequires = convertRequires.filter((entry,idx) => !reqIdxs.includes(idx));
+			// unset original export entry
+			convertExports[idx] = false;
 
 			if (!convertCombos.has(expt.context.statement)) {
 				convertCombos.set(expt.context.statement,{
@@ -78,6 +82,9 @@ function build(config,pathStr,code,depMap) {
 			convertCombos.get(expt.context.statement).exports.push(expt);
 		}
 	}
+	// remove unset require/export entries (from combos)
+	convertRequires = convertRequires.filter(Boolean);
+	convertExports = convertExports.filter(Boolean);
 
 	// convert all combo require/export statements
 	for (let [ stmt, combo, ] of convertCombos.entries()) {
@@ -135,38 +142,94 @@ function build(config,pathStr,code,depMap) {
 			req.esmType == "default-import-indirect" &&
 			expt.esmType == "default-export"
 		) {
-			let importTarget = T.Identifier(req.binding.uniqueTarget);
+			let uniqTarget = T.Identifier(req.binding.uniqueTarget);
 
 			stmt.replaceWithMultiple([
 				T.ImportDeclaration(
 					[
 						// import * as x from .. ?
 						(config.namespaceImport ?
-							T.ImportNamespaceSpecifier(importTarget) :
+							T.ImportNamespaceSpecifier(uniqTarget) :
 							// otherwise, import x from ..
-							T.ImportDefaultSpecifier(importTarget)
+							T.ImportDefaultSpecifier(uniqTarget)
 						),
 					],
 					T.StringLiteral(specifierPath)
 				),
-				T.ExportDefaultDeclaration(importTarget)
+				T.ExportDefaultDeclaration(uniqTarget)
 			]);
+		}
+		// indirect with module-exports replacement? import .. + $module$exports
+		else if (expt.esmType == "substitute-module-exports-reference") {
+			// handle require(..) call replacement first
+			if (req.esmType == "substitute-default-import-indirect") {
+				let uniqTarget = T.Identifier(req.binding.uniqueTarget);
+
+				// insert default-import statement
+				req.context.statement.insertBefore(
+					T.ImportDeclaration(
+						[
+							(config.namespaceImport ?
+								T.ImportNamespaceSpecifier(uniqTarget) :
+								T.ImportDefaultSpecifier(uniqTarget)
+							),
+						],
+						T.StringLiteral(specifierPath)
+					)
+				);
+
+				// replace require(..) call
+				req.context.requireCall.replaceWith(uniqTarget);
+			}
+			else if (req.esmType == "substitute-named-import-indirect") {
+				let uniqTarget = T.Identifier(req.binding.uniqueTarget);
+
+				// insert named-import statement
+				req.context.statement.insertBefore(
+					T.ImportDeclaration(
+						[
+							(
+								req.binding.source == "default" ?
+									T.ImportDefaultSpecifier(uniqTarget) :
+									T.ImportSpecifier(
+										uniqTarget,
+										T.Identifier(req.binding.source)
+									)
+							),
+						],
+						T.StringLiteral(specifierPath)
+					)
+				);
+
+				// replace require(..).x call
+				req.context.expression.replaceWith(uniqTarget);
+			}
+
+			// now handle module.exports replacement
+			if (!$module$exports) {
+				$module$exports = createModuleExports(programPath);
+			}
+			expt.context.exportsExpression.replaceWith($module$exports);
 		}
 		// otherwise, named indirect: import { x [as y] } + export { y }
 		else {
-			let importTarget = T.Identifier(req.binding.uniqueTarget);
+			let uniqTarget = T.Identifier(req.binding.uniqueTarget);
 
 			stmt.replaceWithMultiple([
 				T.ImportDeclaration(
 					[
-						T.ImportSpecifier(
-							importTarget,
-							T.Identifier(req.binding.source)
+						(
+							req.binding.source == "default" ?
+								T.ImportDefaultSpecifier(uniqTarget) :
+								T.ImportSpecifier(
+									uniqTarget,
+									T.Identifier(req.binding.source)
+								)
 						),
 					],
 					T.StringLiteral(specifierPath)
 				),
-				T.ExportDefaultDeclaration(importTarget),
+				T.ExportDefaultDeclaration(uniqTarget),
 			]);
 		}
 	}
@@ -222,11 +285,13 @@ function build(config,pathStr,code,depMap) {
 			// collect named bindings
 			let importBindings = [];
 			for (let binding of (Array.isArray(req.binding) ? req.binding : [ req.binding, ])) {
+				let target = T.Identifier(binding.target);
+
 				importBindings.push(
 					(binding.source == "default") ?
-						T.ImportDefaultSpecifier(T.Identifier(binding.target)) :
+						T.ImportDefaultSpecifier(target) :
 						T.ImportSpecifier(
-							T.Identifier(binding.target),
+							target,
 							T.Identifier(binding.source)
 						)
 				);
@@ -265,11 +330,13 @@ function build(config,pathStr,code,depMap) {
 			let importBindings = [];
 			let assignments = [];
 			for (let binding of (Array.isArray(req.binding) ? req.binding : [ req.binding, ])) {
+				let uniqTarget = T.Identifier(binding.uniqueTarget);
+
 				importBindings.push(
 					(binding.source == "default") ?
-						T.ImportDefaultSpecifier(T.Identifier(binding.uniqueTarget)) :
+						T.ImportDefaultSpecifier(uniqTarget) :
 						T.ImportSpecifier(
-							T.Identifier(binding.uniqueTarget),
+							uniqTarget,
 							T.Identifier(binding.source)
 						)
 				);
@@ -278,7 +345,7 @@ function build(config,pathStr,code,depMap) {
 						T.AssignmentExpression(
 							"=",
 							T.Identifier(binding.target),
-							T.Identifier(binding.uniqueTarget)
+							uniqTarget
 						)
 					)
 				);
@@ -289,6 +356,45 @@ function build(config,pathStr,code,depMap) {
 				T.ImportDeclaration(importBindings,T.StringLiteral(specifierPath)),
 				...assignments,
 			]);
+		}
+		else if (req.esmType == "substitute-default-import-indirect") {
+			let uniqTarget = T.Identifier(req.binding.uniqueTarget);
+
+			// insert default-import statement
+			req.context.statement.insertBefore(
+				T.ImportDeclaration(
+					[
+						(config.namespaceImport ?
+							T.ImportNamespaceSpecifier(uniqTarget) :
+							T.ImportDefaultSpecifier(uniqTarget)
+						),
+					],
+					T.StringLiteral(specifierPath)
+				)
+			);
+
+			// replace require(..) call
+			req.context.requireCall.replaceWith(uniqTarget);
+		}
+		else if (req.esmType == "substitute-named-import-indirect") {
+			let uniqTarget = T.Identifier(req.binding.uniqueTarget);
+
+			// insert named-import statement
+			req.context.statement.insertBefore(
+				T.ImportDeclaration([
+					(
+						binding.source == "default" ?
+							T.ImportDefaultSpecifier(uniqTarget) :
+							T.ImportSpecifier(
+								uniqTarget,
+								T.Identifier(req.binding.source)
+							)
+					),
+				])
+			);
+
+			// replace require(..).x call
+			req.context.expression.replaceWith(uniqTarget);
 		}
 	}
 
@@ -362,26 +468,32 @@ function build(config,pathStr,code,depMap) {
 					)
 			);
 		}
+		else if (expt.esmType == "substitute-module-exports-reference") {
+			if (!$module$exports) {
+				$module$exports = createModuleExports(programPath);
+			}
+			expt.context.exportsExpression.replaceWith($module$exports);
+		}
 	}
 
 	// remove any strict-mode directive (since ESM is automatically strict-mode)
 	programAST.program.directives.length = 0;
 
-	return { ...generate(programAST), ast: programAST, refDeps: depMap, modulePath, moduleName, };
+	return { ...generate(programAST), ast: programAST, refDeps: depMap, pathStr: modulePathStr, name: moduleName, };
 }
 
 function index(config,esmBuilds,depMap) {
-	var modulePath = "./index.js";
-	var altModulePath = modulePath.replace(/\.js$/,".cjs");
-	var moduleName = depMap[modulePath || altModulePath] || "Index";
+	var modulePathStr = "./index.js";
+	var altModulePathStr = modulePathStr.replace(/\.js$/,".cjs");
+	var moduleName = depMap[modulePathStr || altModulePathStr] || "Index";
 
 	// remove a dependency self-reference (if any)
 	depMap = Object.fromEntries(
-		Object.entries(depMap).filter(([ dPath, dName ]) => (dPath != modulePath && dPath != altModulePath))
+		Object.entries(depMap).filter(([ dPath, dName ]) => (dPath != modulePathStr && dPath != altModulePathStr))
 	);
 
 	// handle any file extension renaming, per config
-	modulePath = renameFileExtension(config,modulePath);
+	modulePathStr = renameFileExtension(config,modulePathStr);
 
 	// start with empty program
 	var esmAST = T.File(template.program("")());
@@ -413,7 +525,7 @@ function index(config,esmBuilds,depMap) {
 		);
 	}
 
-	return { ...generate(esmAST), ast: esmAST, refDeps: depMap, modulePath, moduleName, };
+	return { ...generate(esmAST), ast: esmAST, refDeps: depMap, pathStr: modulePathStr, name: moduleName, };
 }
 
 function renameFileExtension(config,pathStr) {
@@ -425,4 +537,23 @@ function renameFileExtension(config,pathStr) {
 		return pathStr.replace(/\.c?js$/,".mjs");
 	}
 	return pathStr;
+}
+
+function createModuleExports(programPath) {
+	// setup substitute module-exports target
+	var moduleExports = T.Identifier(programPath.scope.generateUidIdentifier("exp").name);
+	programPath.unshiftContainer(
+		"body",
+		T.VariableDeclaration(
+			"var",
+			[
+				T.VariableDeclarator(moduleExports,T.ObjectExpression([])),
+			]
+		)
+	);
+	programPath.pushContainer(
+		"body",
+		T.ExportDefaultDeclaration(moduleExports)
+	);
+	return moduleExports;
 }

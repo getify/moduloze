@@ -7,7 +7,7 @@ var os = require("os");
 var T = require("@babel/types");
 
 module.exports.findParentStatement = findParentStatement;
-module.exports.isAssignmentTarget = findParentStatement;
+module.exports.isAssignmentTarget = isAssignmentTarget;
 module.exports.expandHomeDir = expandHomeDir;
 module.exports.addRelativeCurrentDir = addRelativeCurrentDir;
 module.exports.splitPath = splitPath;
@@ -22,10 +22,10 @@ var HOMEPATH = os.homedir();
 var generatedNames = {};
 
 function findParentStatement(path) {
-	if (T.isProgram(path)) {
+	if (T.isProgram(path.node)) {
 		return null;
 	}
-	else if (T.isStatement(path)) {
+	else if (T.isStatement(path.node)) {
 		return path;
 	}
 	else {
