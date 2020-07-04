@@ -32,6 +32,7 @@ function defaultLibConfig({
 	ignoreCircularDependency = false,
 	".mjs": renameMJS = false,
 	namespaceImport = false,
+	namespaceExport = false,
 	exportDefaultFrom = false,
 	...otherConfig
 } = {}) {
@@ -40,6 +41,7 @@ function defaultLibConfig({
 		ignoreCircularDependency,
 		".mjs": renameMJS,
 		namespaceImport,
+		namespaceExport,
 		exportDefaultFrom,
 		...otherConfig,
 	};

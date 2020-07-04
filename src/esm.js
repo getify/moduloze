@@ -350,39 +350,27 @@ function index(config,esmBuilds,depMap) {
 		if (config[".mjs"]) {
 			depPath = depPath.replace(/\.c?js$/,".mjs");
 		}
-		if (config.exportDefaultFrom) {
-			esmAST.program.body.push(
-				T.ExportNamedDeclaration(
-					null,
-					[
-						T.ExportDefaultSpecifier(T.Identifier(depName)),
-					],
-					T.StringLiteral(depPath)
-				)
-			);
-		}
-		else {
-			esmAST.program.body.push(
-				T.ImportDeclaration(
-					[
-						(config.namespaceImport ?
-							T.ImportNamespaceSpecifier(T.Identifier(depName)) :
-							T.ImportDefaultSpecifier(T.Identifier(depName))
-						),
-					],
-					T.StringLiteral(depPath)
-				),
-				T.ExportNamedDeclaration(
-					null,
-					[
-						T.ExportSpecifier(
-							T.Identifier(depName),
-							T.Identifier(depName)
-						),
-					]
-				)
-			);
-		}
+
+		let target = T.Identifier(depName);
+
+		esmAST.program.body.push(
+			T.ExportNamedDeclaration(
+				null,
+				[
+					(
+						// export x from .. ?
+						config.exportDefaultFrom ? T.ExportDefaultSpecifier(target) :
+
+						// export * as x from .. ?
+						config.namespaceExport ? T.ExportNamespaceSpecifier(target) :
+
+						// otherwise, export { default as x } from ..
+						T.ExportSpecifier(T.Identifier("default"),target)
+					),
+				],
+				T.StringLiteral(depPath)
+			)
+		);
 	}
 
 	return { ...generate(esmAST), ast: esmAST, refDeps: depMap, modulePath, moduleName, };
