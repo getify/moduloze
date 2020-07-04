@@ -105,10 +105,7 @@ function CLI(version = "0.0.0?") {
 			// process each output format
 			for (let format of [ "esm", "umd", ]) {
 				if (res[format]) {
-					let outputPath = path.join(config.to,format,relativePath);
-					if (format == "esm" && config[".mjs"]) {
-						outputPath = outputPath.replace(/\.js$/,".mjs");
-					}
+					let outputPath = path.join(config.to,format,res[format].modulePath);
 					let outputDir = path.dirname(outputPath);
 					if (!mkdir(outputDir)) {
 						throw new Error(`Output directory (${ outputDir }) could not be created.`);
@@ -152,9 +149,8 @@ function CLI(version = "0.0.0?") {
 		// need to bundle all the UMDs together?
 		if (config.bundleUMDPath && umdBuilds.length > 0) {
 			let res = bundleUMD(config,umdBuilds);
-			let outputPath = path.join(config.to,"umd","bundle.js");
 			try {
-				fs.writeFileSync(outputPath,res.code,"utf-8");
+				fs.writeFileSync(config.bundleUMDPath,res.code,"utf-8");
 			}
 			catch (err) {
 				throw new Error(`UMD bundle (${ outputPath }) could not be created.`);
@@ -399,7 +395,7 @@ function defaultCLIConfig({
 	from = process.env.FROMPATH,
 	to = process.env.TOPATH,
 	depMap = process.env.DEPMAPPATH,
-	bundleUMDPath = process.env.UMDBUNDLEPATH,
+	bundleUMDPath,
 	skip = [],
 	copyOnSkip = false,
 	copyFiles = [],
@@ -416,8 +412,8 @@ function defaultCLIConfig({
 		resolvePath(params["dep-map"] || depMap || "./package.json") :
 		depMap;
 	bundleUMDPath =
-		("bundle-umd" in params || "UMDBUNDLEPATH" in process.env) ?
-			resolvePath(params["bundle-umd"] || bundleUMDPath || "./umd/bundle.js") :
+		("bundle-umd" in params || bundleUMDPath || "UMDBUNDLEPATH" in process.env) ?
+			resolvePath(params["bundle-umd"] || bundleUMDPath || process.env.UMDBUNDLEPATH || "./umd/bundle.js") :
 			false;
 	recursive = params.recursive || recursive;
 	buildESM = params["build-esm"] || buildESM;
@@ -425,8 +421,8 @@ function defaultCLIConfig({
 
 	return {
 		from, to, recursive, buildESM, buildUMD, skip,
-		copyOnSkip, depMap, bundleUMDPath, generateIndex,
-		...other,
+		copyOnSkip, copyFiles, depMap, bundleUMDPath,
+		generateIndex, ...other,
 	};
 }
 

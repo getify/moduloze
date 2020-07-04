@@ -46,7 +46,10 @@ function build(config,pathStr,code,depMap) {
 	modulePath = addRelativeCurrentDir(modulePath);
 	var moduleName = depMap[modulePath];
 
-	// if unknown module?
+	// rename source file .cjs extension (per config)
+	modulePath = renameCJS(config,modulePath);
+
+	// unknown module?
 	if (!moduleName) {
 		if (config.ignoreUnknownDependency) {
 			moduleName = generateName();
@@ -63,8 +66,10 @@ function build(config,pathStr,code,depMap) {
 		// normalize dependency path
 		let [ , origSpecifierPath, ] = splitPath(config.from,expandHomeDir(req.specifier));
 		let specifierPath = addRelativeCurrentDir(origSpecifierPath);
-
 		let depName = depMap[specifierPath];
+
+		// rename source file .cjs extension (per config)
+		specifierPath = renameCJS(config,specifierPath);
 
 		// unknown/unnamed dependency?
 		if (!depName) {
@@ -262,11 +267,16 @@ function index(config,umdBuilds,depMap) {
 	}
 
 	var modulePath = "./index.js";
-	var moduleName = depMap[modulePath] || "Index";
+	var altModulePath = modulePath.replace(/\.js$/,".cjs");
+	var moduleName = depMap[modulePath || altModulePath] || "Index";
+
 	// remove a dependency self-reference (if any)
 	depMap = Object.fromEntries(
-		Object.entries(depMap).filter(([ dPath, dName ]) => dPath != modulePath)
+		Object.entries(depMap).filter(([ dPath, dName ]) => (dPath != modulePath && dPath != altModulePath))
 	);
+
+	// handle any file extension renaming, per config
+	modulePath = renameCJS(config,modulePath);
 
 	// construct UMD from template
 	var umdAST = parse(UMDTemplate);
@@ -288,6 +298,9 @@ function index(config,umdBuilds,depMap) {
 				if (dependencies.length > 0) {
 					let dependenciesPath = callExprPath.get("arguments.2");
 					for (let [ depPath, depName, ] of dependencies) {
+						// rename source file .cjs extension (per config)
+						depPath = renameCJS(config,depPath);
+
 						// add dependency entry
 						dependenciesPath.node.properties.push(
 							T.ObjectProperty(
@@ -346,4 +359,11 @@ function sortDependencies(umdBuilds) {
 
 	// perform topological sort
 	return toposort.array(umdBuilds,depsGraph).reverse();
+}
+
+function renameCJS(config,pathStr) {
+	if (config[".cjs"]) {
+		return pathStr.replace(/\.cjs$/,".js");
+	}
+	return pathStr;
 }

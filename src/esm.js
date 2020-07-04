@@ -31,6 +31,22 @@ function build(config,pathStr,code,depMap) {
 		convertExports,
 	} = identifyRequiresAndExports(pathStr,code);
 
+	var [ , origModulePath, ] = splitPath(config.from,pathStr);
+	var modulePath = addRelativeCurrentDir(origModulePath);
+	var moduleName = depMap[modulePath];
+
+	// handle any file extension renaming, per config
+	modulePath = renameFileExtension(config,modulePath);
+
+	// unknown module?
+	if (!moduleName) {
+		modulePath = origModulePath;
+
+		moduleName = generateName();
+		depMap[modulePath] = moduleName;
+	}
+	var refDeps = {};
+
 	// find any combo statements that have both a require and an export in it
 	var stmts = new Map();
 	var convertCombos = new Map();
@@ -72,9 +88,21 @@ function build(config,pathStr,code,depMap) {
 		if (!(specifierPath in depMap)) {
 			specifierPath = origSpecifierPath;
 		}
-		if (config[".mjs"]) {
-			specifierPath = specifierPath.replace(/\.c?js$/,".mjs");
+		let depName = depMap[specifierPath];
+
+		// handle any file extension renaming, per config
+		specifierPath = renameFileExtension(config,specifierPath);
+
+		// unknown/unnamed dependency?
+		if (!depName) {
+			specifierPath = origSpecifierPath;
+
+			depName = generateName();
+			depMap[specifierPath] = depName;
 		}
+
+		// track which dependencies from the map we've actually referenced
+		refDeps[specifierPath] = depName;
 
 		let expt = combo.exports[0];
 
@@ -151,10 +179,23 @@ function build(config,pathStr,code,depMap) {
 		if (!(specifierPath in depMap)) {
 			specifierPath = origSpecifierPath;
 		}
-		if (config[".mjs"]) {
-			specifierPath = specifierPath.replace(/\.c?js$/,".mjs");
+		let depName = depMap[specifierPath];
+
+		// handle any file extension renaming, per config
+		specifierPath = renameFileExtension(config,specifierPath);
+
+		// unknown/unnamed dependency?
+		if (!depName) {
+			specifierPath = origSpecifierPath;
+
+			depName = generateName();
+			depMap[specifierPath] = depName;
 		}
 
+		// track which dependencies from the map we've actually referenced
+		refDeps[specifierPath] = depName;
+
+		// process require() statements/expressions
 		if (req.esmType == "bare-import") {
 			// replace with bare-import statement
 			req.context.statement.replaceWith(
@@ -326,30 +367,29 @@ function build(config,pathStr,code,depMap) {
 	// remove any strict-mode directive (since ESM is automatically strict-mode)
 	programAST.program.directives.length = 0;
 
-	return generate(programAST);
+	return { ...generate(programAST), ast: programAST, refDeps: depMap, modulePath, moduleName, };
 }
 
 function index(config,esmBuilds,depMap) {
 	var modulePath = "./index.js";
-	var moduleName = depMap[modulePath] || "Index";
+	var altModulePath = modulePath.replace(/\.js$/,".cjs");
+	var moduleName = depMap[modulePath || altModulePath] || "Index";
 
 	// remove a dependency self-reference (if any)
 	depMap = Object.fromEntries(
-		Object.entries(depMap).filter(([ dPath, dName ]) => dPath != modulePath)
+		Object.entries(depMap).filter(([ dPath, dName ]) => (dPath != modulePath && dPath != altModulePath))
 	);
 
-	if (config[".mjs"]) {
-		modulePath = modulePath.replace(/\.c?js$/,".mjs");
-	}
+	// handle any file extension renaming, per config
+	modulePath = renameFileExtension(config,modulePath);
 
 	// start with empty program
 	var esmAST = T.File(template.program("")());
 
 	var dependencies = Object.entries(depMap);
 	for (let [ depPath, depName, ] of dependencies) {
-		if (config[".mjs"]) {
-			depPath = depPath.replace(/\.c?js$/,".mjs");
-		}
+		// handle any file extension renaming, per config
+		depPath = renameFileExtension(config,depPath);
 
 		let target = T.Identifier(depName);
 
@@ -374,4 +414,15 @@ function index(config,esmBuilds,depMap) {
 	}
 
 	return { ...generate(esmAST), ast: esmAST, refDeps: depMap, modulePath, moduleName, };
+}
+
+function renameFileExtension(config,pathStr) {
+	// handle any file extension renaming, per config
+	if (config[".cjs"]) {
+		return pathStr.replace(/\.cjs$/,".js");
+	}
+	else if (config[".mjs"]) {
+		return pathStr.replace(/\.c?js$/,".mjs");
+	}
+	return pathStr;
 }
