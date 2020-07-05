@@ -62,6 +62,7 @@ function build(config,pathStr,code,depMap) {
 		}
 	}
 	var refDeps = {};
+	var defaultExportSet = false;
 
 	// convert all requires to UMD dependencies
 	for (let req of convertRequires) {
@@ -136,6 +137,12 @@ function build(config,pathStr,code,depMap) {
 
 		// convert all exports
 		for (let expt of convertExports) {
+			// default export?
+			if (expt.umdType == "default-assignment") {
+				// only one module.exports assignment allowed per module
+				registerDefaultExport(expt.context.exportsExpression);
+			}
+
 			expt.context.exportsExpression.replaceWith($module$exports);
 		}
 	}
@@ -199,6 +206,20 @@ function build(config,pathStr,code,depMap) {
 	}
 
 	return { ...generate(programAST), ast: programAST, refDeps, pathStr: modulePathStr, name: moduleName, };
+
+
+	// *****************************
+
+	function registerDefaultExport(context) {
+		// TODO: include `context` in error reporting
+
+		// already assigned to module-exports? only one assignment allowed per module
+		if (defaultExportSet) {
+			throw new Error("Multiple replacements of exports not allowed in the same module");
+		}
+		defaultExportSet = true;
+	}
+
 }
 
 function bundle(config,umdBuilds) {

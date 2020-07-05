@@ -47,7 +47,7 @@ function build(config,pathStr,code,depMap) {
 	}
 	var refDeps = {};
 	var $module$exports;
-
+	var defaultExportSet = false;
 
 	// find any combo statements that have both a require and an export in it
 	var reqStmts = new Map();
@@ -132,6 +132,12 @@ function build(config,pathStr,code,depMap) {
 				expt.esmType == "destructured-declaration-export"
 			)
 		) {
+			// default export?
+			if (expt.binding.target == "default") {
+				// only one default export allowed per module
+				registerDefaultExport(expt.context.exportsExpression);
+			}
+
 			stmt.replaceWith(
 				T.ExportNamedDeclaration(
 					null,
@@ -150,6 +156,9 @@ function build(config,pathStr,code,depMap) {
 			req.esmType == "default-import-indirect" &&
 			expt.esmType == "default-export"
 		) {
+			// only one default export allowed per module
+			registerDefaultExport(expt.context.exportsExpression);
+
 			let uniqTarget = T.Identifier(req.binding.uniqueTarget);
 
 			stmt.replaceWithMultiple([
@@ -169,6 +178,9 @@ function build(config,pathStr,code,depMap) {
 		}
 		// indirect with module-exports replacement? import .. + $module$exports
 		else if (expt.esmType == "substitute-module-exports-reference") {
+			// only one default export allowed per module
+			registerDefaultExport(expt.context.exportsExpression);
+
 			// handle require(..) call replacement first
 			if (req.esmType == "substitute-default-import-indirect") {
 				let uniqTarget = T.Identifier(req.binding.uniqueTarget);
@@ -217,10 +229,17 @@ function build(config,pathStr,code,depMap) {
 			if (!$module$exports) {
 				$module$exports = createModuleExports(programPath);
 			}
+
 			expt.context.exportsExpression.replaceWith($module$exports);
 		}
 		// otherwise, named indirect: import { x [as y] } + export { y }
 		else {
+			// TODO: check on whether this should be a default or named export?
+
+			// // only one default export allowed per module
+			// registerDefaultExport(expt.context.exportsExpression);
+
+
 			let uniqTarget = T.Identifier(req.binding.uniqueTarget);
 
 			stmt.replaceWithMultiple([
@@ -414,6 +433,9 @@ function build(config,pathStr,code,depMap) {
 	// convert all exports
 	for (let expt of convertExports) {
 		if (expt.esmType == "default-export") {
+			// only one default export allowed per module
+			registerDefaultExport(expt.context.exportsExpression);
+
 			expt.context.statement.replaceWith(
 				T.ExportDefaultDeclaration(expt.binding.source)
 			);
@@ -441,6 +463,12 @@ function build(config,pathStr,code,depMap) {
 			);
 		}
 		else if (expt.esmType == "named-declaration-export") {
+			// default export?
+			if (expt.binding.target == "default") {
+				// only one default export allowed per module
+				registerDefaultExport(expt.context.exportsExpression);
+			}
+
 			expt.context.statement.replaceWithMultiple([
 				T.VariableDeclaration(
 					"let",
@@ -467,6 +495,12 @@ function build(config,pathStr,code,depMap) {
 			]);
 		}
 		else if (expt.esmType == "named-export") {
+			// default export?
+			if (expt.binding.target == "default") {
+				// only one default export allowed per module
+				registerDefaultExport(expt.context.exportsExpression);
+			}
+
 			expt.context.statement.replaceWith(
 				(expt.binding.target == "default") ?
 					T.ExportDefaultDeclaration(expt.binding.source) :
@@ -482,6 +516,9 @@ function build(config,pathStr,code,depMap) {
 			);
 		}
 		else if (expt.esmType == "substitute-module-exports-reference") {
+			// only one default export allowed per module
+			registerDefaultExport(expt.context.exportsExpression);
+
 			if (!$module$exports) {
 				$module$exports = createModuleExports(programPath);
 			}
@@ -493,6 +530,20 @@ function build(config,pathStr,code,depMap) {
 	programAST.program.directives.length = 0;
 
 	return { ...generate(programAST), ast: programAST, refDeps: depMap, pathStr: modulePathStr, name: moduleName, };
+
+
+	// *****************************
+
+	function registerDefaultExport(context) {
+		// TODO: include `context` in error reporting
+
+		// already set a default-export? only one allowed per module
+		if (defaultExportSet) {
+			throw new Error("Multiple default exports not allowed in the same module");
+		}
+		defaultExportSet = true;
+	}
+
 }
 
 function index(config,esmBuilds,depMap) {

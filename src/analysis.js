@@ -691,7 +691,7 @@ function analyzeExports(exportStatements,exportReferences) {
 			continue;
 		}
 
-		// if we get here, the exports/module.exports wasn't of a supported form
+		// if we get here, the module.exports expression wasn't of a supported form
 		throw new Error("Unsupported: exports expression not ESM export-compatible");
 	}
 
