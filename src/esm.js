@@ -53,6 +53,14 @@ function build(config,pathStr,code,depMap) {
 	var reqStmts = new Map();
 	var convertCombos = new Map();
 	for (let [ idx, req, ] of convertRequires.entries()) {
+		// substitution requires? can't be part of a combo statement
+		if (
+			req.esmType == "substitute-named-import-indirect" ||
+			req.esmType == "substitute-default-import-indirect"
+		) {
+			continue;
+		}
+
 		if (!reqStmts.has(req.context.statement)) {
 			reqStmts.set(req.context.statement,{ reqIdxs: [], reqs: [], });
 		}
@@ -267,7 +275,7 @@ function build(config,pathStr,code,depMap) {
 		}
 		else if (req.esmType == "default-import") {
 			// replace with default-import statement
-			req.context.statement.replaceWith(
+			req.context.statement.insertBefore(
 				T.ImportDeclaration(
 					[
 						// import * as x from .. ?
@@ -280,6 +288,7 @@ function build(config,pathStr,code,depMap) {
 					T.StringLiteral(specifierPath)
 				)
 			);
+			req.context.declarator.remove();
 		}
 		else if (req.esmType == "named-import") {
 			// collect named bindings
@@ -298,9 +307,10 @@ function build(config,pathStr,code,depMap) {
 			}
 
 			// replace with named-import statement
-			req.context.statement.replaceWith(
+			req.context.statement.insertBefore(
 				T.ImportDeclaration(importBindings,T.StringLiteral(specifierPath))
 			);
+			req.context.declarator.remove();
 		}
 		else if (req.esmType == "default-import-indirect") {
 			// replace with...
@@ -381,16 +391,19 @@ function build(config,pathStr,code,depMap) {
 
 			// insert named-import statement
 			req.context.statement.insertBefore(
-				T.ImportDeclaration([
-					(
-						binding.source == "default" ?
-							T.ImportDefaultSpecifier(uniqTarget) :
-							T.ImportSpecifier(
-								uniqTarget,
-								T.Identifier(req.binding.source)
-							)
-					),
-				])
+				T.ImportDeclaration(
+					[
+						(
+							req.binding.source == "default" ?
+								T.ImportDefaultSpecifier(uniqTarget) :
+								T.ImportSpecifier(
+									uniqTarget,
+									T.Identifier(req.binding.source)
+								)
+						),
+					],
+					T.StringLiteral(specifierPath)
+				)
 			);
 
 			// replace require(..).x call

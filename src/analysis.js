@@ -121,20 +121,23 @@ function identifyRequiresAndExports(codePath,code) {
 function analyzeRequires(requireStatements,requireCalls) {
 	var convertRequires = [];
 
-	for (let stmt of requireStatements) {
-		if (!T.isProgram(stmt.parent)) {
+	for (let stmtPath of requireStatements) {
+		if (!T.isProgram(stmtPath.parent)) {
 			throw new Error("Require statements must be at the top-level of the program");
 		}
-		let stmtReqCalls = requireCalls.get(stmt);
+		let stmtReqCalls = [ ...requireCalls.get(stmtPath), ];
 
 		// standalone require(".."")?
 		if (
-			T.isExpressionStatement(stmt.node) &&
-			T.isCallExpression(stmt.node.expression) &&
+			T.isExpressionStatement(stmtPath.node) &&
+			T.isCallExpression(stmtPath.node.expression) &&
 			stmtReqCalls.length == 1 &&
-			stmtReqCalls[0].node == stmt.node.expression
+			stmtReqCalls[0].node == stmtPath.node.expression
 		) {
-			let call = stmt.node.expression;
+			// unset entry to mark this require(..) expression as handled
+			stmtReqCalls[0] = false;
+
+			let call = stmtPath.node.expression;
 			let specifier = call.arguments[0].extra.rawValue;
 
 			// console.log(`import ${ specifier };`);
@@ -143,24 +146,31 @@ function analyzeRequires(requireStatements,requireCalls) {
 				umdType: "remove-require-unique",
 				specifier,
 				context: {
-					statement: stmt,
+					statement: stmtPath,
 				},
 			});
-			continue;
 		}
 		// var/let/const declaration statement?
-		else if (T.isVariableDeclaration(stmt.node)) {
-			for (let [declIdx,declNode,] of stmt.node.declarations.entries()) {
-				let decl = stmt.get(`declarations.${ declIdx }`);
+		else if (T.isVariableDeclaration(stmtPath.node)) {
+			for (let [ declIdx, declNode, ] of stmtPath.node.declarations.entries()) {
+				// no require(..) in this declaration, so skip?
+				if (!hasRequireCalls(stmtPath,declNode.init,stmtReqCalls)) {
+					continue;
+				}
+
+				let decl = stmtPath.get(`declarations.${ declIdx }`);
 
 				// normal identifier declaration? var x = ..
 				if (T.isIdentifier(declNode.id)) {
 					// call as initialization assignment? var x = require(..)
-					if (
-						T.isCallExpression(declNode.init) &&
+					if (T.isCallExpression(declNode.init) &&
 						stmtReqCalls.find(p => p.node == declNode.init)
 					) {
-						let call = declNode.init;
+						// unset entry to mark this require(..) expression as handled
+						stmtReqCalls[stmtReqCalls.findIndex(p => p.node == declNode.init)] = false;
+
+						let callPath = decl.get("init");
+						let call = callPath.node;
 						let specifier = call.arguments[0].extra.rawValue;
 
 						// console.log(`import * as ${ declNode.id.name } from ${ specifier };`);
@@ -173,20 +183,23 @@ function analyzeRequires(requireStatements,requireCalls) {
 							},
 							specifier,
 							context: {
-								statement: stmt,
+								statement: stmtPath,
 								declarator: decl,
 								declarationIdx: declIdx,
-								requireCall: decl.get("init"),
+								requireCall: callPath,
 							},
 						});
-						continue;
 					}
 					else if (
 						// require(..) is part of a simple member expression?
 						isSimpleMemberExpression(declNode.init) &&
 						stmtReqCalls.find(p => p.node == declNode.init.object)
 					) {
-						let call = declNode.init.object;
+						// unset entry to mark this require(..) expression as handled
+						stmtReqCalls[stmtReqCalls.findIndex(p => p.node == declNode.init.object)] = false;
+
+						let callPath = decl.get("init.object");
+						let call = callPath.node;
 						let specifier = call.arguments[0].extra.rawValue;
 						let target = declNode.id.name;
 						let source =
@@ -206,17 +219,12 @@ function analyzeRequires(requireStatements,requireCalls) {
 							},
 							specifier,
 							context: {
-								statement: stmt,
+								statement: stmtPath,
 								declarator: decl,
 								declarationIdx: declIdx,
-								requireCall: decl.get("init.object"),
+								requireCall: callPath,
 							},
 						});
-						continue;
-					}
-					// otherwise, a variable declaration without a require(..) in it
-					else {
-						continue;
 					}
 				}
 				// destructuring assignment? var { x } = require(..)
@@ -225,7 +233,11 @@ function analyzeRequires(requireStatements,requireCalls) {
 					T.isCallExpression(declNode.init) &&
 					stmtReqCalls.find(p => p.node == declNode.init)
 				) {
-					let call = declNode.init;
+					// unset entry to mark this require(..) expression as handled
+					stmtReqCalls[stmtReqCalls.findIndex(p => p.node == declNode.init)] = false;
+
+					let callPath = decl.get("init");
+					let call = callPath.node;
 					let specifier = call.arguments[0].extra.rawValue;
 					let pattern = declNode.id;
 					let bindings = [];
@@ -247,46 +259,42 @@ function analyzeRequires(requireStatements,requireCalls) {
 							continue;
 						}
 
-						// if we get here, the `require(..)` wasn't of a supported form
+						// if we get here, the destructuring wasn't of a supported ESM import form
 						throw new Error("Unsupported: destructuring pattern not ESM import-compatible");
 					}
 
-					if (bindings.length > 0) {
-						// console.log(`import { ${ binding } } from ${ specifier };`);
-						convertRequires.push({
-							esmType: "named-import",
-							umdType: "destructured-dependency",
-							binding: bindings,
-							specifier,
-							context: {
-								statement: stmt,
-								declarator: decl,
-								declarationIdx: declIdx,
-								requireCall: decl.get("init"),
-							},
-						});
-						continue;
-					}
+					// console.log(`import { ${ binding } } from ${ specifier };`);
+					convertRequires.push({
+						esmType: "named-import",
+						umdType: "destructured-dependency",
+						binding: bindings,
+						specifier,
+						context: {
+							statement: stmtPath,
+							declarator: decl,
+							declarationIdx: declIdx,
+							requireCall: callPath,
+						},
+					});
 				}
-
-				// if we get here, the require(..) wasn't of a supported form
-				throw new Error("Unsupported: variable declaration not ESM import-compatible");
 			}
-
-			continue;
 		}
 		// non-declaration assignment statement?
 		else if (
-			T.isExpressionStatement(stmt.node) &&
-			T.isAssignmentExpression(stmt.node.expression)
+			T.isExpressionStatement(stmtPath.node) &&
+			T.isAssignmentExpression(stmtPath.node.expression)
 		) {
-			let assignment = stmt.node.expression;
+			let assignment = stmtPath.node.expression;
 
 			// regular identifier assignment? x = ..
 			if (T.isIdentifier(assignment.left)) {
 				// simple call assignment? x = require(..)
 				if (stmtReqCalls.find(p => p.node == assignment.right)) {
-					let call = assignment.right;
+					// unset entry to mark this require(..) expression as handled
+					stmtReqCalls[stmtReqCalls.findIndex(p => p.node == assignment.right)] = false;
+
+					let callPath = stmtPath.get("expression.right");
+					let call = callPath.node;
 					let specifier = call.arguments[0].extra.rawValue;
 					let target = assignment.left.name;
 
@@ -298,22 +306,25 @@ function analyzeRequires(requireStatements,requireCalls) {
 						binding: {
 							source: "default",
 							target,
-							uniqueTarget: stmt.scope.generateUidIdentifier("imp").name,
+							uniqueTarget: stmtPath.scope.generateUidIdentifier("imp").name,
 						},
 						specifier,
 						context: {
-							statement: stmt,
-							requireCall: stmt.get("expression.right"),
+							statement: stmtPath,
+							requireCall: callPath,
 						},
 					});
-					continue;
 				}
 				else if (
 					// require(..) part of a simple member expression?
 					isSimpleMemberExpression(assignment.right) &&
 					stmtReqCalls.find(p => p.node == assignment.right.object)
 				) {
-					let call = assignment.right.object;
+					// unset entry to mark this require(..) expression as handled
+					stmtReqCalls[stmtReqCalls.findIndex(p => p.node == assignment.right.object)] = false;
+
+					let callPath = stmtPath.get("expression.right.object");
+					let call = callPath.node;
 					let specifier = call.arguments[0].extra.rawValue;
 					let target = assignment.left.name;
 					let source =
@@ -330,15 +341,14 @@ function analyzeRequires(requireStatements,requireCalls) {
 						binding: {
 							source,
 							target,
-							uniqueTarget: stmt.scope.generateUidIdentifier("imp").name,
+							uniqueTarget: stmtPath.scope.generateUidIdentifier("imp").name,
 						},
 						specifier,
 						context: {
-							statement: stmt,
-							requireCall: stmt.get("expression.right.object"),
+							statement: stmtPath,
+							requireCall: callPath,
 						},
 					});
-					continue;
 				}
 			}
 			// destructuring assignment? { x } = require(..)
@@ -346,7 +356,11 @@ function analyzeRequires(requireStatements,requireCalls) {
 				T.isObjectPattern(assignment.left) &&
 				stmtReqCalls.find(p => p.node == assignment.right)
 			) {
-				let call = assignment.right;
+				// unset entry to mark this require(..) expression as handled
+				stmtReqCalls[stmtReqCalls.findIndex(p => p.node == assignment.right)] = false;
+
+				let callPath = stmtPath.get("expression.right");
+				let call = callPath.node;
 				let specifier = call.arguments[0].extra.rawValue;
 				let pattern = assignment.left;
 				let bindings = [];
@@ -364,7 +378,7 @@ function analyzeRequires(requireStatements,requireCalls) {
 						bindings.push({
 							source,
 							target: targetProp.value.name,
-							uniqueTarget: stmt.scope.generateUidIdentifier("imp").name,
+							uniqueTarget: stmtPath.scope.generateUidIdentifier("imp").name,
 						});
 						continue;
 					}
@@ -381,23 +395,18 @@ function analyzeRequires(requireStatements,requireCalls) {
 						binding: bindings,
 						specifier,
 						context: {
-							statement: stmt,
-							requireCall: stmt.get("expression.right"),
+							statement: stmtPath,
+							requireCall: callPath,
 						},
 					});
-					continue;
 				}
 			}
-			// default or named re-export?
+			// default or named re-export? (aka, "combo")
 			// ie, module.exports = require(..).. OR module.exports.x = require(..)..
 			else if (
 				isModuleExports(assignment.left) ||
 				(
-					T.isMemberExpression(assignment.left,{ computed: false, }) &&
-					(
-						T.isIdentifier(assignment.left.property) ||
-						T.isStringLiteral(assignment.left.property)
-					) &&
+					isSimpleMemberExpression(assignment.left) &&
 					isModuleExports(assignment.left.object)
 				)
 			) {
@@ -405,7 +414,11 @@ function analyzeRequires(requireStatements,requireCalls) {
 
 				// require(..) by itself?
 				if (stmtReqCalls.find(p => p.node == assignment.right)) {
-					let call = assignment.right;
+					// unset entry to mark this require(..) expression as handled
+					stmtReqCalls[stmtReqCalls.findIndex(p => p.node == assignment.right)] = false;
+
+					let callPath = stmtPath.get("expression.right");
+					let call = callPath.node;
 					let specifier = call.arguments[0].extra.rawValue;
 
 					// console.log(`import * as ${ target$1 } from ${ specifier }; ${ target } = ${ target$1 };`);
@@ -416,22 +429,25 @@ function analyzeRequires(requireStatements,requireCalls) {
 						binding: {
 							source: "default",
 							target,
-							uniqueTarget: stmt.scope.generateUidIdentifier("imp").name,
+							uniqueTarget: stmtPath.scope.generateUidIdentifier("imp").name,
 						},
 						specifier,
 						context: {
-							statement: stmt,
-							requireCall: stmt.get("expression.right"),
+							statement: stmtPath,
+							requireCall: callPath,
 						},
 					});
-					continue;
 				}
 				// require(..).x form?
 				else if (
 					isSimpleMemberExpression(assignment.right) &&
 					stmtReqCalls.find(p => p.node == assignment.right.object)
 				) {
-					let call = assignment.right.object;
+					// unset entry to mark this require(..) expression as handled
+					stmtReqCalls[stmtReqCalls.findIndex(p => p.node == assignment.right.object)] = false;
+
+					let callPath = stmtPath.get("expression.right.object");
+					let call = callPath.node;
 					let specifier = call.arguments[0].extra.rawValue;
 					let source =
 						T.isIdentifier(assignment.right.property) ?
@@ -447,92 +463,104 @@ function analyzeRequires(requireStatements,requireCalls) {
 						binding: {
 							source,
 							target,
-							uniqueTarget: stmt.scope.generateUidIdentifier("imp").name,
+							uniqueTarget: stmtPath.scope.generateUidIdentifier("imp").name,
 						},
 						specifier,
 						context: {
-							statement: stmt,
-							requireCall: stmt.get("expression.right.object"),
+							statement: stmtPath,
+							requireCall: callPath,
 						},
 					});
-					continue;
 				}
 			}
 		}
 
-		// if we get here, handle all other require(..) occurences as expression substitutions
-		for (let call of stmtReqCalls) {
-			let specifier = call.node.arguments[0].extra.rawValue;
+		// remove entries marked as handled
+		stmtReqCalls = stmtReqCalls.filter(Boolean);
 
-			// require(..).x form?
-			if (
-				isSimpleMemberExpression(call.parent)
-			) {
-				let source =
-					T.isIdentifier(call.parent.property) ?
-						call.parent.property.name :
-					T.isStringLiteral(call.parent.property) ?
-						call.parent.property.value :
-					undefined;
-
-				// console.log(`import { ${ binding } } from ${ specifier }; ${ target } = ${ target$1 };`);
-				convertRequires.push({
-					esmType: "substitute-named-import-indirect",
-					umdType: "substitute-indirect-source-target",
-					binding: {
-						source,
-						uniqueTarget: stmt.scope.generateUidIdentifier("imp").name,
-					},
-					specifier,
-					context: {
-						statement: stmt,
-						requireCall: call,
-						expression: call.parentPath,
-					},
-				});
-			}
-			// assume just simple require(..) form
-			else {
-				// console.log(`import * as ${ target$1 } from ${ specifier }; ${ target } = ${ target$1 };`);
-				// console.log(`import ${ target$1 } from ${ specifier }; ${ target } = ${ target$1 };`);
-				convertRequires.push({
-					esmType: "substitute-default-import-indirect",
-					umdType: "substitute-indirect-target",
-					binding: {
-						source: "default",
-						uniqueTarget: stmt.scope.generateUidIdentifier("imp").name,
-					},
-					specifier,
-					context: {
-						statement: stmt,
-						requireCall: call,
-					},
-				});
-			}
+		// any unhandled require(..) occurences in this statement?
+		// handle them as simple expression substitutions
+		if (stmtReqCalls.length > 0) {
+			convertRequires = [
+				...convertRequires,
+				...stmtReqCalls.map(function handleReqCall(reqCallPath){
+					return analyzeRequireSubstitutions(stmtPath,reqCallPath);
+				})
+			];
 		}
 	}
 
 	return convertRequires;
 }
 
+function analyzeRequireSubstitutions(stmtPath,callPath) {
+	var specifier = callPath.node.arguments[0].extra.rawValue;
+
+	// require(..).x form?
+	if (
+		isSimpleMemberExpression(callPath.parent)
+	) {
+		let source =
+			T.isIdentifier(callPath.parent.property) ?
+				callPath.parent.property.name :
+			T.isStringLiteral(callPath.parent.property) ?
+				callPath.parent.property.value :
+			undefined;
+
+		// console.log(`import { ${ binding } } from ${ specifier }; ${ target } = ${ target$1 };`);
+		return {
+			esmType: "substitute-named-import-indirect",
+			umdType: "substitute-indirect-source-target",
+			binding: {
+				source,
+				uniqueTarget: stmtPath.scope.generateUidIdentifier("imp").name,
+			},
+			specifier,
+			context: {
+				statement: stmtPath,
+				requireCall: callPath,
+				expression: callPath.parentPath,
+			},
+		};
+	}
+	// assume just simple require(..) form
+	else {
+		// console.log(`import * as ${ target$1 } from ${ specifier }; ${ target } = ${ target$1 };`);
+		// console.log(`import ${ target$1 } from ${ specifier }; ${ target } = ${ target$1 };`);
+		return {
+			esmType: "substitute-default-import-indirect",
+			umdType: "substitute-indirect-target",
+			binding: {
+				source: "default",
+				uniqueTarget: stmtPath.scope.generateUidIdentifier("imp").name,
+			},
+			specifier,
+			context: {
+				statement: stmtPath,
+				requireCall: callPath,
+			},
+		};
+	}
+}
+
 function analyzeExports(exportStatements,exportReferences) {
 	var convertExports = [];
 
-	for (let stmt of exportStatements) {
-		if (!T.isProgram(stmt.parent)) {
+	for (let stmtPath of exportStatements) {
+		if (!T.isProgram(stmtPath.parent)) {
 			throw new Error("Exports expressions must be at the top-level of the program");
 		}
-		let stmtExportExpressions = exportReferences.get(stmt);
+		let stmtExportExpressions = exportReferences.get(stmtPath);
 		let exprRefs = stmtExportExpressions.refs;
 
 		if (stmtExportExpressions.type == "assignment") {
 			// single export assignment?
 			if (
-				T.isExpressionStatement(stmt.node) &&
-				T.isAssignmentExpression(stmt.node.expression) &&
+				T.isExpressionStatement(stmtPath.node) &&
+				T.isAssignmentExpression(stmtPath.node.expression) &&
 				exprRefs.length == 1
 			) {
-				let assignment = stmt.node.expression;
+				let assignment = stmtPath.node.expression;
 				let target = assignment.left;
 				let source = assignment.right;
 
@@ -551,8 +579,8 @@ function analyzeExports(exportStatements,exportReferences) {
 								source,
 							},
 							context: {
-								statement: stmt,
-								exportsExpression: stmt.get("expression.left"),
+								statement: stmtPath,
+								exportsExpression: stmtPath.get("expression.left"),
 							},
 						});
 						continue;
@@ -567,8 +595,8 @@ function analyzeExports(exportStatements,exportReferences) {
 								source,
 							},
 							context: {
-								statement: stmt,
-								exportsExpression: stmt.get("expression.left"),
+								statement: stmtPath,
+								exportsExpression: stmtPath.get("expression.left"),
 							},
 						});
 						continue;
@@ -598,8 +626,8 @@ function analyzeExports(exportStatements,exportReferences) {
 								target: exportName,
 							},
 							context: {
-								statement: stmt,
-								exportsExpression: stmt.get("expression.left.object"),
+								statement: stmtPath,
+								exportsExpression: stmtPath.get("expression.left.object"),
 							},
 						});
 						continue;
@@ -622,8 +650,8 @@ function analyzeExports(exportStatements,exportReferences) {
 								target: exportName,
 							},
 							context: {
-								statement: stmt,
-								exportsExpression: stmt.get("expression.left.object"),
+								statement: stmtPath,
+								exportsExpression: stmtPath.get("expression.left.object"),
 							},
 						});
 						continue;
@@ -637,11 +665,11 @@ function analyzeExports(exportStatements,exportReferences) {
 							binding: {
 								source,
 								target: exportName,
-								uniqueTarget: stmt.scope.generateUidIdentifier("exp").name,
+								uniqueTarget: stmtPath.scope.generateUidIdentifier("exp").name,
 							},
 							context: {
-								statement: stmt,
-								exportsExpression: stmt.get("expression.left.object"),
+								statement: stmtPath,
+								exportsExpression: stmtPath.get("expression.left.object"),
 							},
 						});
 						continue;
@@ -655,7 +683,7 @@ function analyzeExports(exportStatements,exportReferences) {
 					esmType: "substitute-module-exports-reference",
 					umdType: "substitute-module-exports-reference",
 					context: {
-						statement: stmt,
+						statement: stmtPath,
 						exportsExpression: ref,
 					},
 				});
@@ -668,6 +696,17 @@ function analyzeExports(exportStatements,exportReferences) {
 	}
 
 	return convertExports;
+}
+
+function hasRequireCalls(stmtPath,node,stmtReqCalls) {
+	for (let reqCall of stmtReqCalls) {
+		let curPath = reqCall;
+		while (curPath && curPath != stmtPath) {
+			if (curPath.node == node) return true;
+			curPath = curPath.parentPath;
+		}
+	}
+	return false;
 }
 
 function isModuleExports(node) {
