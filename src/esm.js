@@ -232,32 +232,9 @@ function build(config,pathStr,code,depMap) {
 
 			expt.context.exportsExpression.replaceWith($module$exports);
 		}
-		// otherwise, named indirect: import { x [as y] } + export { y }
+		// should not get here
 		else {
-			// TODO: check on whether this should be a default or named export?
-
-			// // only one default export allowed per module
-			// registerDefaultExport(expt.context.exportsExpression);
-
-
-			let uniqTarget = T.Identifier(req.binding.uniqueTarget);
-
-			stmt.replaceWithMultiple([
-				T.ImportDeclaration(
-					[
-						(
-							req.binding.source == "default" ?
-								T.ImportDefaultSpecifier(uniqTarget) :
-								T.ImportSpecifier(
-									uniqTarget,
-									T.Identifier(req.binding.source)
-								)
-						),
-					],
-					T.StringLiteral(specifierPath)
-				),
-				T.ExportDefaultDeclaration(uniqTarget),
-			]);
+			throw new Error("Unsupported: combined import/export form not ESM compatible");
 		}
 	}
 
