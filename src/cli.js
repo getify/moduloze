@@ -153,7 +153,7 @@ function CLI(version = "0.0.0?") {
 				fs.writeFileSync(config.bundleUMDPath,res.code,"utf-8");
 			}
 			catch (err) {
-				throw new Error(`UMD bundle (${ outputPath }) could not be created.`);
+				throw new Error(`UMD bundle (${ config.bundleUMDPath }) could not be created.`);
 			}
 		}
 
@@ -413,7 +413,7 @@ function defaultCLIConfig({
 		depMap;
 	bundleUMDPath =
 		("bundle-umd" in params || bundleUMDPath || "UMDBUNDLEPATH" in process.env) ?
-			resolvePath(params["bundle-umd"] || bundleUMDPath || process.env.UMDBUNDLEPATH || "./umd/bundle.js") :
+			resolvePath((params["bundle-umd"] || bundleUMDPath || process.env.UMDBUNDLEPATH || "./umd/bundle.js"),to) :
 			false;
 	recursive = params.recursive || recursive;
 	buildESM = params["build-esm"] || buildESM;
@@ -426,9 +426,9 @@ function defaultCLIConfig({
 	};
 }
 
-function resolvePath(pathStr) {
+function resolvePath(pathStr,basePath = process.cwd()) {
 	pathStr = expandHomeDir(pathStr);
-	return path.resolve(process.cwd(),pathStr);
+	return path.resolve(basePath,pathStr);
 }
 
 function mkdir(pathStr) {

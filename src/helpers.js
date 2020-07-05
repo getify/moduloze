@@ -7,6 +7,7 @@ var os = require("os");
 var T = require("@babel/types");
 
 module.exports.findParentStatement = findParentStatement;
+module.exports.isFunction = isFunction;
 module.exports.isAssignmentTarget = isAssignmentTarget;
 module.exports.expandHomeDir = expandHomeDir;
 module.exports.addRelativeCurrentDir = addRelativeCurrentDir;
@@ -33,10 +34,15 @@ function findParentStatement(path) {
 	}
 }
 
+function isFunction(path) {
+	return T.isFunctionDeclaration(path.node) || T.isFunctionExpression(path.node);
+}
+
 function isAssignmentTarget(path) {
 	if (
 		T.isProgram(path.node) ||
 		T.isStatement(path.node) ||
+		isFunction(path) ||
 		T.isAssignmentPattern(path.node)
 	) {
 		return false;

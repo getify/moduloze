@@ -7,6 +7,7 @@ var { parse, } = require("@babel/parser");
 
 var {
 	findParentStatement,
+	isFunction,
 	isAssignmentTarget,
 } = require("./helpers.js");
 
@@ -80,12 +81,18 @@ function identifyRequiresAndExports(codePath,code) {
 				// exports?
 				if (
 					path.node.name == "exports" &&
-					// NOT part of a member expression like x.exports or x[exports]?
-					// note 1: exports.x form is recognized, but x.exports and x[exports]
-					//   aren't relevant export forms
-					// note 2: module.exports intentionally excluded here because that's
-					//   already handled via MemberExpression visitor
-					!T.isMemberExpression(path.parent,{ property: path.node, })
+					// not part of a member expression? (intentionally excludes module.exports)
+					!T.isMemberExpression(path.parent,{ property: path.node, }) &&
+					(
+						// in a left-hand assignment target postion?
+						isAssignmentTarget(path) ||
+						(
+							// not a function parameter
+							!isFunction(path.parentPath) &&
+							// not a property in an object literal
+							!T.isObjectProperty(path.parent,{ key: path.node, })
+						)
+					)
 				) {
 					let parentStatementPath = findParentStatement(path.parentPath);
 					if (parentStatementPath) {
@@ -548,6 +555,9 @@ function analyzeExports(exportStatements,exportReferences) {
 
 	for (let stmtPath of exportStatements) {
 		if (!T.isProgram(stmtPath.parent)) {
+			console.log(generate(stmtPath.node));
+
+
 			throw new Error("Exports expressions must be at the top-level of the program");
 		}
 		let stmtExportExpressions = exportReferences.get(stmtPath);
