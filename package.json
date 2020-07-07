@@ -1,7 +1,7 @@
 {
 	"name": "moduloze",
 	"description": "Convert CommonJS (CJS) modules to UMD and ESM formats",
-	"version": "0.3.0",
+	"version": "0.3.1",
 	"main": "src/index.js",
 	"bin": {
 		"mz": "./scripts/mz"

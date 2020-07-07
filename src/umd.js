@@ -365,7 +365,7 @@ function sortDependencies(umdBuilds) {
 	// map of module paths to the builds
 	var depMap = {};
 	for (let umd of umdBuilds) {
-		depMap[umd.modulePath] = umd;
+		depMap[umd.pathStr] = umd;
 	}
 
 	// construct graph edges (dependency relationships)
