@@ -14,6 +14,66 @@ Alternatively, Moduloze can be used as a one-time "upgrade" code-mod, to take a 
 
 Moduloze comes as a library that can be used directly, but also includes a helpful CLI that drives a lot of the logic necessary to convert a tree of files from CJS to UMD/ESM formats. It's recommended to use the CLI unless there are specific concerns that must be worked around.
 
+## Module Format Conversion
+
+Moduloze recognizes and handles a wide range of typical CJS `require(..)` and `module.exports` usage patterns.
+
+For example, consider this CJS import:
+
+```js
+var Whatever = require("./path/to/whatever.js");
+```
+
+The ESM-build equivalent would (by default) be:
+
+```js
+import Whatever from "./path/to/whatever.js";
+```
+
+The UMD-build equivalent is handled in the UMD wrapper, where `Whatever` would automatically be set as an identifier (parameter) in scope for your UMD module code; thus, the entire `require(..)` containing statement would be removed.
+
+And for this CJS export:
+
+```js
+module.exports = Whatever(42);
+```
+
+The ESM-build equivalent would (by default) be:
+
+```js
+export default Whatever(42);
+```
+
+The UMD-build equivalent would be:
+
+```js
+// auto inserted at the top of a UMD module that has exports
+var _exp1 = {};
+
+// ..
+
+_exp1 = Whatever(42);
+
+// ..
+
+// auto inserted at the bottom of a UMD module that has exports
+return _exp1;
+```
+
+For a much more detailed illustration of all the different conversion forms, please see the [Conversion Guide](conversion-guide.md).
+
+### Unsupported
+
+There are variations which are not supported, since they are impossible (or impractical) to express in the target UMD or (more often) ESM format.
+
+For example, `require(..)` calls for importing dependencies **must** have a single string-literal argument. Any sort of variable or expression in the argument position will reject the `require(..)` call and fail the build. The main reason is that ESM `import` statements require string literals.
+
+Yes, JS recently added a dynamic `import(..)` function, which can handle expression arguments, but `import(..)` has a bunch of other usage nuances that are impractical for Moduloze to support, such as being async (returning promises). Moreover, the UMD wrapper pattern doesn't support arbitrary expression logic for computing the dependency paths; it would make the UMD wrapper intractably complex.
+
+Both `require(..)` calls and `module.exports` must also be at the top level scope, not inside loops or conditionals. Again, this is primarily because ESM `import` and `export` statements must be at the top level scope and not wrapped in any block or other statement. Additionally, supporting these variations would make the UMD wrapper intractably complex.
+
+For more details on limitations, please see the [Conversion Guide](conversion-guide.md#whats-not-supported).
+
 ## CLI
 
 To use the CLI:
