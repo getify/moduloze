@@ -41,7 +41,7 @@ export default _exp2;
 
 Let's break that conversion down.
 
-#### Imports
+#### Converted `import`s
 
 By default, `var Whatever = require(..)` becomes `import Whatever from ".."`. If you set the [`namespaceImport` configuration](README.md#configuration-settings) to `true`, it would have been `import * as Whatever from ".."`. The difference is, do you want Moduloze to assume that your modules always export a single default export (so use a default `import ..` form), or that your modules always export one or more named exports (so use a namespace `import * as ..` form, to collect all named imports under the single namespace).
 
@@ -51,8 +51,195 @@ The import form `var { Something } = require(..)` -- or alternately, `var xyz = 
 
 If `require(..)` otherwise shows up as part of some expression, such as `require(..).another()`, then the module is first default imported (or namespace imported, depending on the `namespaceImport` config) to bind to an auto-generated identifier (`_imp`, in this case), and then the rest of the expression is computed with that result (`var anotherVal = _imp()`).
 
-#### Exports
+#### Converted `export`s
 
 The named export `module.exports.whatever = ..` is an expression, which can't be directly exported. So first the computation of the export is assigned to an auto-generated variable (`_exp` in this case), and then exported by name with `export { _exp as whatever }`.
 
 When `module.exports` shows up in any other expression besides a direct or named assignment, the results are actually computed first and assigned to an auto-generated variable (`_exp2` in this case), and then exported. The assumption is that any such operations performed against `module.exports` (via the intermediary `_exp2`) should have their final computed result exported as a default export (`export default _exp2`).
+
+## Other Conversion Variations
+
+Let's also explore a variety of other forms of import and export conversion.
+
+### Import Forms
+
+```js
+require("..");
+
+// converts to:
+
+import "..";
+```
+
+```js
+var x = require("..");
+
+// converts to:
+
+import x from "..";
+
+// or, if "importNamespace" config is set:
+
+import * as x from "..";
+```
+
+```js
+// var x = ..
+x = require("..");
+
+// converts to:
+
+import { default as _imp } from "..";
+x = _imp;
+
+// or, if "importNamespace" config is set:
+
+import * as _imp from "..";
+x = _imp;
+```
+
+```js
+var x = require("..").something;
+
+// converts to:
+
+import { something as x } from "..";
+```
+
+```js
+// var x = ..
+x = require("..").something;
+
+// converts to:
+
+import { something as _imp } from "..";
+x = _imp;
+```
+
+```js
+var { something } = require("..");
+
+// converts to:
+
+import { something } from "..";
+```
+
+```js
+var { something: x } = require("..");
+
+// converts to:
+
+import { something as x } from "..";
+```
+
+```js
+// var something = ..
+({ something } = require(".."));
+
+// converts to:
+
+import _imp from "..";
+({ something } = _imp);
+
+// or, if "importNamespace" config is set:
+
+import * as _imp from "..";
+({ something } = _imp);
+```
+
+```js
+// var x = ..
+({ something: x } = require(".."));
+
+// converts to:
+
+import _imp from "..";
+({ something: x } = _imp);
+
+// or, if "importNamespace" config is set:
+
+import * as _imp from "..";
+({ something: x } = _imp);
+```
+
+```js
+var x = require("..").something(42);
+
+// converts to:
+
+import _imp from "..";
+var x = _imp.something(42);
+
+// or, if "namespaceImport" config is set:
+
+import * as _imp from "..";
+var x = _imp.something(42);
+```
+
+```js
+// var x = ..
+
+x = require("..").something(42);
+
+// converts to:
+
+import _imp from "..";
+x = _imp.something(42);
+
+// or, if "namespaceImport" config is set:
+
+import * as _imp from "..";
+x = _imp.something(42);
+```
+
+```js
+var x = require("..")(42);
+
+// converts to:
+
+import _imp from "..";
+var x = _imp(42);
+
+// or, if "namespaceImport" config is set:
+
+import * as _imp from "..";
+var x = _imp(42);
+```
+
+```js
+// var x = ..
+
+x = require("..")(42);
+
+// converts to:
+
+import _imp from "..";
+x = _imp(42);
+
+// or, if "namespaceImport" config is set:
+
+import * as _imp from "..";
+x = _imp(42);
+```
+
+```js
+something( require("..") );
+
+// converts to:
+
+import _imp from "..";
+something( _imp );
+
+// or, if "namespaceImport" config is set:
+
+import * as _imp from "..";
+something( _imp );
+```
+
+### Export Forms
+
+// TODO
+
+### Import + Export Forms
+
+// TODO

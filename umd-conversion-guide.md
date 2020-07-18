@@ -80,7 +80,7 @@ return _exp2;
 
 Let's break that conversion down.
 
-#### Imports
+#### Converted Imports
 
 The UMD wrapper automatically takes care of the entirety of a default import, like the first `Whatever` import; that statement is effectively removed (having been replaced by just the `Whatever` named parameter -- see the UMD wrapper boilerplate).
 
@@ -88,8 +88,144 @@ The named import for `Something` is computed against the imported module binding
 
 And the computation of `anotherVal` is performed against the imported `Another` module binding.
 
-#### Exports
+#### Converted Exports
 
 All assignments to `module.exports` are rewritten to be performed against an auto-generated variable (`_exp2` above), such as `_exp2.whatever = ..`, including other non-obvious assignment computations/expressions, like the `Object.assign(..)`.
 
 Finally, the `_exp2` intermediary is returned as the single exported value for the module.
+
+## Other Conversion Variations
+
+Let's also explore a variety of other forms of import and export conversion.
+
+### Import Forms
+
+When `require("..")` is encountered in the original source, the UMD wrapper takes care of loading this dependency, and setting it into the scope of the UMD module (via parameter) by its dependency name, or is auto-generated (like `Mz_43812323`), if unknown.
+
+**Note:** In the following snippets, `DependencyName` stands in for this identifier (whether by its configured name, or auto-generated).
+
+```js
+require("..");
+
+// handled by the UMD wrapper
+```
+
+```js
+var x = require("..");
+
+// handled by the UMD wrapper
+```
+
+```js
+// var x = ..
+x = require("..");
+
+// converts to:
+
+x = DependencyName;
+```
+
+**Note:**
+
+```js
+var x = require("..").something;
+
+// converts to:
+
+var x = DependencyName.something;
+```
+
+```js
+// var x = ..
+x = require("..").something;
+
+// converts to:
+
+x = DependencyName.something;
+```
+
+```js
+var { something } = require("..");
+
+// converts to:
+
+var { something } = DependencyName;
+```
+
+```js
+var { something: x } = require("..");
+
+// converts to:
+
+var { something: x } = DependencyName;
+```
+
+```js
+// var something = ..
+({ something } = require(".."));
+
+// converts to:
+
+({ something } = DependencyName);
+```
+
+```js
+// var x = ..
+({ something: x } = require(".."));
+
+// converts to:
+
+({ something: x } = DependencyName);
+```
+
+```js
+var x = require("..").something(42);
+
+// converts to:
+
+var x = DependencyName.something(42);
+```
+
+```js
+// var x = ..
+
+x = require("..").something(42);
+
+// converts to:
+
+x = DependencyName.something(42);
+```
+
+```js
+var x = require("..")(42);
+
+// converts to:
+
+var x = DependencyName(42);
+```
+
+```js
+// var x = ..
+
+x = require("..")(42);
+
+// converts to:
+
+x = DependencyName(42);
+```
+
+```js
+something( require("..") );
+
+// converts to:
+
+something( DependencyName );
+```
+
+### Export Forms
+
+// TODO
+
+### Import + Export Forms
+
+// TODO
