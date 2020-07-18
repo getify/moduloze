@@ -26,12 +26,12 @@ import Whatever from "./src/whatever.mjs";
 import { Something } from "./src/something.js";
 import _imp from "./src/another.mjs";
 
-var anotherVal = _imp();
+let anotherVal = _imp();
 
 let _exp = Whatever();
 
 export { _exp as whatever };
-var _exp2 = {};
+let _exp2 = {};
 Object.assign(_exp2, {
   Something,
   Another: anotherVal
@@ -107,12 +107,30 @@ import { something as x } from "..";
 ```
 
 ```js
+var x = require("..").default;
+
+// converts to:
+
+import x from "..";
+```
+
+```js
 // var x = ..
 x = require("..").something;
 
 // converts to:
 
 import { something as _imp } from "..";
+x = _imp;
+```
+
+```js
+// var x = ..
+x = require("..").default;
+
+// converts to:
+
+import _imp from "..";
 x = _imp;
 ```
 
@@ -138,13 +156,8 @@ import { something as x } from "..";
 
 // converts to:
 
-import _imp from "..";
-({ something } = _imp);
-
-// or, if "importNamespace" config is set:
-
-import * as _imp from "..";
-({ something } = _imp);
+import { something as _imp } from "..";
+something = _imp;
 ```
 
 ```js
@@ -153,13 +166,8 @@ import * as _imp from "..";
 
 // converts to:
 
-import _imp from "..";
-({ something: x } = _imp);
-
-// or, if "importNamespace" config is set:
-
-import * as _imp from "..";
-({ something: x } = _imp);
+import { something as imp } from "..";
+x = _imp;
 ```
 
 ```js
@@ -295,7 +303,7 @@ module.exports.x = 42;
 
 // converts to:
 
-var _exp = 42;
+let _exp = 42;
 export { _exp as x };
 ```
 
@@ -304,7 +312,7 @@ module.exports.x = function something() { .. };
 
 // converts to:
 
-var _exp = function something() { .. };
+let _exp = function something() { .. };
 export { _exp as x };
 ```
 
@@ -316,7 +324,7 @@ Object.assign(module.exports,{
 
 // converts to:
 
-var _exp = {};
+let _exp = {};
 Object.assign(_exp,{
     something() { .. },
     x: 42
@@ -329,11 +337,52 @@ something(module.exports);
 
 // converts to:
 
-var _exp = {};
+let _exp = {};
 something(_exp);
 export default _exp;
 ```
 
 ### Import + Export Forms
 
-// TODO
+The following are recognized combined forms that are effectively import and re-export in the same statement. In some cases, this can take advantage of the `export .. from ..` combined form.
+
+```js
+module.exports = require("..");
+
+// converts to:
+
+import _imp from "..";
+export default _imp;
+
+// or, if "namespaceImport" config is set:
+
+import * as _imp from "..";
+export default _imp;
+```
+
+```js
+module.exports = require("..").x;
+
+// converts to:
+export { x as default } from "..";
+```
+
+```js
+module.exports.something = require("..").x;
+
+// converts to:
+export { x as something } from "..";
+```
+
+```js
+module.exports.x = require("..");
+
+// converts to:
+
+import _imp from "..";
+export { _imp as x };
+
+// or, if "namespaceImport" config is set:
+import * as _imp from "..";
+export { _imp as x };
+```

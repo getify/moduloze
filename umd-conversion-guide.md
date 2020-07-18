@@ -68,8 +68,8 @@ Now, let's look at the `./src/test.js` module's converted code:
 var {
     Something
 } = Mz_540737562;
-var anotherVal = Another.another();
-var _exp2 = {};
+let anotherVal = Another.another();
+let _exp2 = {};
 _exp2.whatever = Whatever();
 Object.assign(_exp2, {
     Something,
@@ -235,7 +235,7 @@ module.exports = something;
 
 // converts to:
 
-var _exp = {};
+let _exp = {};
 // ..
 _exp = something;
 //..
@@ -247,7 +247,7 @@ module.exports = 42;
 
 // converts to:
 
-var _exp = {};
+let _exp = {};
 // ..
 _exp = 42;
 // ..
@@ -259,7 +259,7 @@ module.exports = something(42);
 
 // converts to:
 
-var _exp = {};
+let _exp = {};
 // ..
 _exp = something(42);
 // ..
@@ -271,7 +271,7 @@ module.exports = function something() { .. };
 
 // converts to:
 
-var _exp = {};
+let _exp = {};
 // ..
 _exp = function something() { .. };
 // ..
@@ -283,7 +283,7 @@ module.exports.x = something;
 
 // converts to:
 
-var _exp = {};
+let _exp = {};
 // ..
 _exp.x = something;
 // ..
@@ -295,7 +295,7 @@ module.exports.x = something.y;
 
 // converts to:
 
-var _exp = {};
+let _exp = {};
 // ..
 _exp.x = something.y;
 // ..
@@ -307,7 +307,7 @@ module.exports.x = 42;
 
 // converts to:
 
-var _exp = {};
+let _exp = {};
 // ..
 _exp.x = 42;
 // ..
@@ -319,7 +319,7 @@ module.exports.x = function something() { .. };
 
 // converts to:
 
-var _exp = {};
+let _exp = {};
 // ..
 _exp.x = function something() { .. };
 // ..
@@ -334,7 +334,7 @@ Object.assign(module.exports,{
 
 // converts to:
 
-var _exp = {};
+let _exp = {};
 // ..
 Object.assign(_exp,{
     something() { .. },
@@ -349,7 +349,7 @@ something(module.exports);
 
 // converts to:
 
-var _exp = {};
+let _exp = {};
 // ..
 something(_exp);
 // ..
@@ -358,4 +358,4 @@ return _exp;
 
 ### Import + Export Forms
 
-// TODO
+The combined import/export forms in UMD builds act like compositions of the above conversions, as there's no specific handling to combine them.

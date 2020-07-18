@@ -51,12 +51,12 @@ import Whatever from "./src/whatever.mjs";
 import { Something } from "./src/something.js";
 import _imp from "./src/another.mjs";
 
-var anotherVal = _imp();
+let anotherVal = _imp();
 
 let _exp = Whatever();
 
 export { _exp as whatever };
-var _exp2 = {};
+let _exp2 = {};
 Object.assign(_exp2, {
   Something,
   Another: anotherVal
@@ -95,8 +95,8 @@ The converted UMD code (in `results.umd.code`) will look like this:
   var {
     Something
   } = Mz_540737562;
-  var anotherVal = Another.another();
-  var _exp2 = {};
+  let anotherVal = Another.another();
+  let _exp2 = {};
   _exp2.whatever = Whatever();
   Object.assign(_exp2, {
     Something,
