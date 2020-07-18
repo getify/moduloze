@@ -1,6 +1,6 @@
 # Moduloze: UMD Conversion Guide
 
-This guide builds [on the Overview Example from the top-level conversion guide](#conversion-guide.md#overview-example).
+This guide builds [on the Overview Example from the top-level conversion guide](conversion-guide.md#overview-example).
 
 ## Conversion Overview Example: UMD
 
