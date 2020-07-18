@@ -238,7 +238,101 @@ something( _imp );
 
 ### Export Forms
 
-// TODO
+In all the following forms, `module.exports` is recognized the same as just `exports`, so they're interchangeable in the conversion.
+
+ESM modules can only have a single "default export" (like `export default ..` or `export { something as default }`), so Moduloze will throw an exception if more than one export conversion results in such a statement.
+
+```js
+module.exports = something;
+
+// converts to:
+
+export default something;
+```
+
+```js
+module.exports = 42;
+
+// converts to:
+
+export default 42;
+```
+
+```js
+module.exports = something(42);
+
+// converts to:
+
+export default something(42);
+```
+
+```js
+module.exports = function something() { .. };
+
+// converts to:
+
+export default function something() { .. };
+```
+
+```js
+module.exports.x = something;
+
+// converts to:
+
+export { something as x };
+```
+
+```js
+module.exports.x = something.y;
+
+// converts to:
+
+export var { y: x } = something;
+```
+
+```js
+module.exports.x = 42;
+
+// converts to:
+
+var _exp = 42;
+export { _exp as x };
+```
+
+```js
+module.exports.x = function something() { .. };
+
+// converts to:
+
+var _exp = function something() { .. };
+export { _exp as x };
+```
+
+```js
+Object.assign(module.exports,{
+    something() { .. },
+    x: 42
+});
+
+// converts to:
+
+var _exp = {};
+Object.assign(_exp,{
+    something() { .. },
+    x: 42
+});
+export default _exp;
+```
+
+```js
+something(module.exports);
+
+// converts to:
+
+var _exp = {};
+something(_exp);
+export default _exp;
+```
 
 ### Import + Export Forms
 

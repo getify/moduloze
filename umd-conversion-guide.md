@@ -224,7 +224,137 @@ something( DependencyName );
 
 ### Export Forms
 
-// TODO
+In all the following forms, `module.exports` is recognized the same as just `exports`, so they're interchangeable in the conversion.
+
+In UMD builds, any operations against `module.exports` are actually performed against an auto-generated substitute (ie, `_exp`), and then at the end of the module, a `return _exp` is inserted.
+
+**Note:** multiple assignments to `module.exports` (ie, `module.exports = ..`, not just `module.exports.x = ..`) are *permitted* in UMD builds. However, you should avoid this, as it's creating confusion by overriding earlier assignments. In the ESM build format, an exception will be thrown, because multiple default exports are not allowed by ESM. It *is* however common (and fine!) to have a single assignment to `module.exports` and then subsequently assign additional properties (ie, `module.exports.x = ..`).
+
+```js
+module.exports = something;
+
+// converts to:
+
+var _exp = {};
+// ..
+_exp = something;
+//..
+return _exp;
+```
+
+```js
+module.exports = 42;
+
+// converts to:
+
+var _exp = {};
+// ..
+_exp = 42;
+// ..
+return _exp;
+```
+
+```js
+module.exports = something(42);
+
+// converts to:
+
+var _exp = {};
+// ..
+_exp = something(42);
+// ..
+return _exp;
+```
+
+```js
+module.exports = function something() { .. };
+
+// converts to:
+
+var _exp = {};
+// ..
+_exp = function something() { .. };
+// ..
+return _exp;
+```
+
+```js
+module.exports.x = something;
+
+// converts to:
+
+var _exp = {};
+// ..
+_exp.x = something;
+// ..
+return _exp;
+```
+
+```js
+module.exports.x = something.y;
+
+// converts to:
+
+var _exp = {};
+// ..
+_exp.x = something.y;
+// ..
+return _exp;
+```
+
+```js
+module.exports.x = 42;
+
+// converts to:
+
+var _exp = {};
+// ..
+_exp.x = 42;
+// ..
+return _exp;
+```
+
+```js
+module.exports.x = function something() { .. };
+
+// converts to:
+
+var _exp = {};
+// ..
+_exp.x = function something() { .. };
+// ..
+return _exp;
+```
+
+```js
+Object.assign(module.exports,{
+    something() { .. },
+    x: 42
+});
+
+// converts to:
+
+var _exp = {};
+// ..
+Object.assign(_exp,{
+    something() { .. },
+    x: 42
+});
+// ..
+return _exp;
+```
+
+```js
+something(module.exports);
+
+// converts to:
+
+var _exp = {};
+// ..
+something(_exp);
+// ..
+return _exp;
+```
 
 ### Import + Export Forms
 
