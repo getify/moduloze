@@ -76,7 +76,7 @@ function build(config,pathStr,code,depMap) {
 
 		// unknown/unnamed dependency?
 		if (!depName) {
-			specifierPath = origSpecifierPath;
+			specifierPath = req.specifier;
 
 			if (
 				req.umdType == "remove-require-unique" ||

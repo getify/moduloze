@@ -98,7 +98,7 @@ function build(config,pathStr,code,depMap) {
 	for (let [ stmt, combo, ] of convertCombos.entries()) {
 		let req = combo.requires[0];
 		// normalize dependency path
-		let [ , origSpecifierPath, ] = splitPath(config.from,req.specifier);
+		let [ , origSpecifierPath, ] = splitPath(config.from,expandHomeDir(req.specifier));
 		let specifierPath = addRelativeCurrentDir(origSpecifierPath);
 		if (!(specifierPath in depMap)) {
 			specifierPath = origSpecifierPath;
@@ -110,7 +110,7 @@ function build(config,pathStr,code,depMap) {
 
 		// unknown/unnamed dependency?
 		if (!depName) {
-			specifierPath = origSpecifierPath;
+			specifierPath = req.specifier;
 
 			depName = generateName();
 			depMap[specifierPath] = depName;
@@ -241,7 +241,7 @@ function build(config,pathStr,code,depMap) {
 	// convert all requires to ESM imports
 	for (let req of convertRequires) {
 		// normalize dependency path
-		let [ , origSpecifierPath, ] = splitPath(config.from,req.specifier);
+		let [ , origSpecifierPath, ] = splitPath(config.from,expandHomeDir(req.specifier));
 		let specifierPath = addRelativeCurrentDir(origSpecifierPath);
 		if (!(specifierPath in depMap)) {
 			specifierPath = origSpecifierPath;
@@ -253,7 +253,7 @@ function build(config,pathStr,code,depMap) {
 
 		// unknown/unnamed dependency?
 		if (!depName) {
-			specifierPath = origSpecifierPath;
+			specifierPath = req.specifier;
 
 			depName = generateName();
 			depMap[specifierPath] = depName;
