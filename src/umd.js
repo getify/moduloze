@@ -124,7 +124,7 @@ function build(config,pathStr,code,depMap) {
 		programPath.unshiftContainer(
 			"body",
 			T.VariableDeclaration(
-				"var",
+				"let",
 				[
 					T.VariableDeclarator($module$exports,T.ObjectExpression([])),
 				]

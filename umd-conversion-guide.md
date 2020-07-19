@@ -68,7 +68,7 @@ Now, let's look at the `./src/test.js` module's converted code:
 var {
     Something
 } = Mz_540737562;
-let anotherVal = Another.another();
+var anotherVal = Another.another();
 let _exp2 = {};
 _exp2.whatever = Whatever();
 Object.assign(_exp2, {

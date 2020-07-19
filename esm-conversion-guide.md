@@ -26,7 +26,7 @@ import Whatever from "./src/whatever.mjs";
 import { Something } from "./src/something.js";
 import _imp from "./src/another.mjs";
 
-let anotherVal = _imp();
+var anotherVal = _imp();
 
 let _exp = Whatever();
 

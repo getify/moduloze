@@ -586,7 +586,7 @@ function createModuleExports(programPath) {
 	programPath.unshiftContainer(
 		"body",
 		T.VariableDeclaration(
-			"var",
+			"let",
 			[
 				T.VariableDeclarator(moduleExports,T.ObjectExpression([])),
 			]
