@@ -227,7 +227,11 @@ function build(config,pathStr,code,depMap) {
 
 			// now handle module.exports replacement
 			if (!$module$exports) {
-				$module$exports = createModuleExports(programPath);
+				$module$exports = createModuleExports(
+					programPath,
+					stmt,
+					convertExports[convertExports.length-1].context.statement
+				);
 			}
 
 			expt.context.exportsExpression.replaceWith($module$exports);
@@ -497,7 +501,11 @@ function build(config,pathStr,code,depMap) {
 			registerDefaultExport(expt.context.exportsExpression);
 
 			if (!$module$exports) {
-				$module$exports = createModuleExports(programPath);
+				$module$exports = createModuleExports(
+					programPath,
+					expt.context.statement,
+					convertExports[convertExports.length-1].context.statement
+				);
 			}
 			expt.context.exportsExpression.replaceWith($module$exports);
 		}
@@ -580,11 +588,10 @@ function renameFileExtension(config,pathStr) {
 	return pathStr;
 }
 
-function createModuleExports(programPath) {
+function createModuleExports(programPath,firstExportNode,lastExportNode) {
 	// setup substitute module-exports target
 	var moduleExports = T.Identifier(programPath.scope.generateUidIdentifier("exp").name);
-	programPath.unshiftContainer(
-		"body",
+	firstExportNode.insertBefore(
 		T.VariableDeclaration(
 			"let",
 			[
@@ -592,8 +599,7 @@ function createModuleExports(programPath) {
 			]
 		)
 	);
-	programPath.pushContainer(
-		"body",
+	lastExportNode.insertAfter(
 		T.ExportDefaultDeclaration(moduleExports)
 	);
 	return moduleExports;

@@ -121,8 +121,7 @@ function build(config,pathStr,code,depMap) {
 	if (convertExports.length > 0) {
 		// setup substitute module-exports target
 		let $module$exports = T.Identifier(programPath.scope.generateUidIdentifier("exp").name);
-		programPath.unshiftContainer(
-			"body",
+		convertExports[0].context.statement.insertBefore(
 			T.VariableDeclaration(
 				"let",
 				[
@@ -130,6 +129,7 @@ function build(config,pathStr,code,depMap) {
 				]
 			)
 		);
+		// note: appending to end of body so that we don't `return` too early
 		programPath.pushContainer(
 			"body",
 			T.ReturnStatement($module$exports)
