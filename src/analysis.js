@@ -199,7 +199,7 @@ function analyzeRequires(requireStatements,requireCalls) {
 					}
 					else if (
 						// require(..) is part of a simple member expression?
-						isSimpleMemberExpression(declNode.init) &&
+						isSimpleMemberExpression(declNode.init,declNode) &&
 						stmtReqCalls.find(p => p.node == declNode.init.object)
 					) {
 						// unset entry to mark this require(..) expression as handled
@@ -324,7 +324,7 @@ function analyzeRequires(requireStatements,requireCalls) {
 				}
 				else if (
 					// require(..) part of a simple member expression?
-					isSimpleMemberExpression(assignment.right) &&
+					isSimpleMemberExpression(assignment.right,assignment) &&
 					stmtReqCalls.find(p => p.node == assignment.right.object)
 				) {
 					// unset entry to mark this require(..) expression as handled
@@ -413,7 +413,7 @@ function analyzeRequires(requireStatements,requireCalls) {
 			else if (
 				isModuleExports(assignment.left) ||
 				(
-					isSimpleMemberExpression(assignment.left) &&
+					isSimpleMemberExpression(assignment.left,assignment) &&
 					isModuleExports(assignment.left.object)
 				)
 			) {
@@ -447,7 +447,7 @@ function analyzeRequires(requireStatements,requireCalls) {
 				}
 				// require(..).x form?
 				else if (
-					isSimpleMemberExpression(assignment.right) &&
+					isSimpleMemberExpression(assignment.right,assignment) &&
 					stmtReqCalls.find(p => p.node == assignment.right.object)
 				) {
 					// unset entry to mark this require(..) expression as handled
@@ -505,7 +505,7 @@ function analyzeRequireSubstitutions(stmtPath,callPath) {
 
 	// require(..).x form?
 	if (
-		isSimpleMemberExpression(callPath.parent)
+		isSimpleMemberExpression(callPath.parent,callPath.parentPath.parent)
 	) {
 		let source =
 			T.isIdentifier(callPath.parent.property) ?
@@ -555,9 +555,6 @@ function analyzeExports(exportStatements,exportReferences) {
 
 	for (let stmtPath of exportStatements) {
 		if (!T.isProgram(stmtPath.parent)) {
-			console.log(generate(stmtPath.node));
-
-
 			throw new Error("Exports expressions must be at the top-level of the program");
 		}
 		let stmtExportExpressions = exportReferences.get(stmtPath);
@@ -615,7 +612,7 @@ function analyzeExports(exportStatements,exportReferences) {
 				// assigning to property on module.exports? module.exports.x = ..
 				else if (
 					T.isMemberExpression(target,{ object: exprRefs[0].node, }) &&
-					isSimpleMemberExpression(target)
+					isSimpleMemberExpression(target,assignment)
 				) {
 					let exportName =
 						T.isIdentifier(target.property) ? target.property.name :
@@ -643,7 +640,7 @@ function analyzeExports(exportStatements,exportReferences) {
 						continue;
 					}
 					// exporting member-expression that can be destructured?
-					else if (isSimpleMemberExpression(source)) {
+					else if (isSimpleMemberExpression(source,assignment)) {
 						let sourceName = (
 							T.isIdentifier(source.property) ? source.property.name :
 							T.isStringLiteral(source.property) ? source.property.value :
@@ -741,7 +738,7 @@ function isModuleExports(node) {
 	);
 }
 
-function isSimpleMemberExpression(node) {
+function isSimpleMemberExpression(node,parentNode) {
 	return (
 		T.isMemberExpression(node) &&
 		(
@@ -755,6 +752,7 @@ function isSimpleMemberExpression(node) {
 				node.computed &&
 				T.isStringLiteral(node.property)
 			)
-		)
+		) &&
+		!T.isCallExpression(parentNode)
 	);
 }
