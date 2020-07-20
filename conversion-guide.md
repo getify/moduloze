@@ -64,7 +64,7 @@ Object.assign(_exp2, {
 export default _exp2;
 ```
 
-For more information on all the nuances of this conversion (and all other forms), see the [ESM Conversion Guide](esm-conversion-guide.md).
+For more information on all the nuances of this conversion (and all other forms), see the [ESM Conversion Guide](./esm-conversion-guide.md).
 
 ### UMD Conversion
 
@@ -109,11 +109,11 @@ The converted UMD code (in `results.umd.code`) will look like this:
 
 **Note:** The code comments and extra blank lines are added here only for easier readability; they're not actually included in the output.
 
-For more information on all the nuances of this conversion (and all other forms), see the [UMD Conversion Guide](umd-conversion-guide.md).
+For more information on all the nuances of this conversion (and all other forms), see the [UMD Conversion Guide](./umd-conversion-guide.md).
 
 ## What's Not Supported
 
-The ["Unsupported"](README.md#unsupported) section of the README covers two major limitations on supported forms:
+The ["Unsupported"](./README.md#unsupported) section of the README covers two major limitations on supported forms:
 
 * `require(..)` must have a single string literal (delimited with `'` or `"`, not `` ` ``)
 
@@ -121,6 +121,6 @@ The ["Unsupported"](README.md#unsupported) section of the README covers two majo
 
 In addition, there are some other limitations to be aware of:
 
-* Circular dependencies are impossible in UMD format; so by default, Moduloze complains if a dependency cycle is detected. If you're only building ESM format, and want to let ESM manage the circular dependency resolution, you can turn on the [`ignoreCircularDependency` configuration](README.md#configuration-settings).
+* Circular dependencies are impossible in UMD format; so by default, Moduloze complains if a dependency cycle is detected. If you're only building ESM format, and want to let ESM manage the circular dependency resolution, you can turn on the [`ignoreCircularDependency` configuration](./README.md#configuration-settings).
 
 * Multiple re-assignments of `module.exports` in the same file is not allowed, since each re-assignment is translated in ESM as a `export default ..`, and only one of those is allowed per ESM module. This would be a red flag anyway; if you find this error raised in your conversion, it likely means the source file is confusingly stepping on its own toes with its conflicting `module.exports` behavior.
