@@ -60,7 +60,7 @@ _exp1 = Whatever(42);
 return _exp1;
 ```
 
-For a much more detailed illustration of all the different conversion forms, please see the [Conversion Guide](conversion-guide.md).
+For a much more detailed illustration of all the different conversion forms, please see the [Conversion Guide](./conversion-guide.md).
 
 ### Unsupported
 
@@ -72,7 +72,7 @@ Yes, JS recently added a dynamic `import(..)` function, which can handle express
 
 Both `require(..)` calls and `module.exports` must also be at the top level scope, not inside loops or conditionals. Again, this is primarily because ESM `import` and `export` statements must be at the top level scope and not wrapped in any block or other statement. Additionally, supporting these variations would make the UMD wrapper intractably complex.
 
-For more details on limitations, please see the [Conversion Guide](conversion-guide.md#whats-not-supported).
+For more details on limitations, please see the [Conversion Guide](./conversion-guide.md#whats-not-supported).
 
 ## CLI
 

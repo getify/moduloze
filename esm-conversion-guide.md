@@ -1,6 +1,6 @@
 # Moduloze: ESM Conversion Guide
 
-This guide builds [on the Overview Example from the top-level conversion guide](conversion-guide.md#overview-example).
+This guide builds [on the Overview Example from the top-level conversion guide](./conversion-guide.md#overview-example).
 
 ## Conversion Overview Example: ESM
 
@@ -43,7 +43,7 @@ Let's break that conversion down.
 
 #### Converted `import`s
 
-By default, `var Whatever = require(..)` becomes `import Whatever from ".."`. If you set the [`namespaceImport` configuration](README.md#configuration-settings) to `true`, it would have been `import * as Whatever from ".."`. The difference is, do you want Moduloze to assume that your modules always export a single default export (so use a default `import ..` form), or that your modules always export one or more named exports (so use a namespace `import * as ..` form, to collect all named imports under the single namespace).
+By default, `var Whatever = require(..)` becomes `import Whatever from ".."`. If you set the [`namespaceImport` configuration](./README.md#configuration-settings) to `true`, it would have been `import * as Whatever from ".."`. The difference is, do you want Moduloze to assume that your modules always export a single default export (so use a default `import ..` form), or that your modules always export one or more named exports (so use a namespace `import * as ..` form, to collect all named imports under the single namespace).
 
 You should typically design all your modules to follow one or the other of those two strategies, and not mix-n-match, and then set the configuration flag to use the appropriate `import` form. Otherwise, the `import` forms Moduloze produces may very well not work as expected. Moduloze *does not* analyze the export patterns to automatically select the appropriate `import` form to use.
 

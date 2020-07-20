@@ -1,7 +1,7 @@
 {
 	"name": "moduloze",
 	"description": "Convert CommonJS (CJS) modules to UMD and ESM formats",
-	"version": "0.4.0",
+	"version": "0.4.1",
 	"main": "src/index.js",
 	"bin": {
 		"mz": "./scripts/mz"
@@ -29,5 +29,21 @@
 		"./esm.js": "ESM",
 		"./analysis.js": "Analysis",
 		"./helpers.js": "Helpers"
-	}
+	},
+	"repository": "getify/moduloze",
+	"keywords": [
+		"cjs",
+		"esm",
+		"umd",
+		"module",
+		"transpiler",
+		"convert"
+	],
+	"bugs": {
+		"url": "https://github.com/getify/moduloze/issues",
+		"email": "getify@gmail.com"
+	},
+	"homepage": "https://github.com/getify/moduloze",
+	"author": "Kyle Simpson <getify@gmail.com>",
+	"license": "MIT"
 }
