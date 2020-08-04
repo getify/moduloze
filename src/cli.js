@@ -41,7 +41,11 @@ var params = minimist(process.argv.slice(2),{
 		"build-umd": false,
 	},
 });
+
+var RC_SPECIFIED = Boolean(params.config || process.env.RCPATH);
+var DEPMAPPATH_SPECIFIED = Boolean(params["dep-map"] || process.env.DEPMAPPATH);
 var RCPATH = resolvePath(params.config || process.env.RCPATH || "./.mzrc");
+var DEPMAPPATH = resolvePath(params["dep-map"] || process.env.DEPMAPPATH || "./package.json");
 
 // initial CLI-config before reading from rc
 var config = defaultCLIConfig();
@@ -201,7 +205,7 @@ function loadConfig() {
 	}
 	catch (err) {
 		// config was invalid
-		if (!params.help) {
+		if (RC_SPECIFIED) {
 			return showError(`Invalid config: ${RCPATH}`,/*includeHelp=*/true);
 		}
 	}
@@ -266,34 +270,41 @@ function checkArgsAndConfig() {
 		}
 	}
 
-	// path specified to UMD dependency map?
-	if (typeof config.depMap == "string") {
+	// dependency map specified?
+	if (!config.depMap) {
 		// path is invalid?
-		if (!checkPath(config.depMap)) {
-			return showError(`Dependency map (${ config.depMap }) is missing or inaccessible.`);
-		}
-
-		// load UMD dependency map
-		let json;
-		try {
-			json = JSON.parse(fs.readFileSync(config.depMap,"utf-8"));
-			// need to find config in a package.json?
-			if (/package\.json$/.test(config.depMap)) {
-				json = json["mz-dependencies"];
-				// "mz-config" key is missing or not an object?
-				if (!json || typeof json != "object") {
-					throw true;
-				}
+		if (!checkPath(config.depMapPath)) {
+			// missing/invalid path specified for dependency map?
+			if (DEPMAPPATH_SPECIFIED) {
+				return showError(`Dependency map (${ config.depMapPath }) is missing or inaccessible.`);
+			}
+			// UMD build format (requires a dependency-map)?
+			else if (config.buildUMD) {
+				return showError("UMD build format requires dependency map.");
+			}
+			// otherwise ESM build assumed
+			else {
+				config.depMap = {};
 			}
 		}
-		catch (err) {
-			return showError(`Invalid/missing dependency map (${ config.depMap }).`);
-		}
-		config.depMap = json;
-	}
-	else if (!("depMap" in config)) {
-		if (config.buildUMD) {
-			return showError("UMD build format requires dependency map.",/*includeHelp=*/true);
+		// otherwise, load UMD dependency map from path
+		else {
+			let json;
+			try {
+				json = JSON.parse(fs.readFileSync(config.depMapPath,"utf-8"));
+				// need to find config in a package.json?
+				if (/package\.json$/.test(config.depMapPath)) {
+					json = json["mz-dependencies"];
+					// "mz-config" key is missing or not an object?
+					if (!json || typeof json != "object") {
+						throw true;
+					}
+				}
+			}
+			catch (err) {
+				return showError(`Invalid/missing dependency map (${ config.depMapPath }).`);
+			}
+			config.depMap = json;
 		}
 	}
 
@@ -366,7 +377,7 @@ function printHelp() {
 	console.log("--to={PATH}                target directory for output file(s)");
 	console.log(`                           [${ config.to }]`);
 	console.log("--dep-map={PATH}, -m       dependency map file");
-	console.log(`                           [${ config.depMap }]`);
+	console.log(`                           [${ DEPMAPPATH }]`);
 	console.log("--recursive, -r            scan recursively for input files");
 	console.log(`                           [${ config.recursive }]`);
 	console.log("--build-esm, -e            build ES-Modules format from input file(s)");
@@ -394,7 +405,7 @@ function showError(err,includeHelp = false) {
 function defaultCLIConfig({
 	from = process.env.FROMPATH,
 	to = process.env.TOPATH,
-	depMap = process.env.DEPMAPPATH,
+	depMap,
 	bundleUMDPath,
 	skip = [],
 	copyOnSkip = false,
@@ -408,9 +419,7 @@ function defaultCLIConfig({
 	// params override configs
 	from = resolvePath(params.from || from || "./");
 	to = resolvePath(params.to || to || "./.mz-build");
-	depMap = (typeof depMap == "string" || typeof depMap == "undefined") ?
-		resolvePath(params["dep-map"] || depMap || "./package.json") :
-		depMap;
+	var depMapPath = DEPMAPPATH;
 	bundleUMDPath =
 		("bundle-umd" in params || bundleUMDPath || "UMDBUNDLEPATH" in process.env) ?
 			resolvePath((params["bundle-umd"] || bundleUMDPath || process.env.UMDBUNDLEPATH || "./umd/bundle.js"),to) :
@@ -421,7 +430,7 @@ function defaultCLIConfig({
 
 	return {
 		from, to, recursive, buildESM, buildUMD, skip,
-		copyOnSkip, copyFiles, depMap, bundleUMDPath,
+		copyOnSkip, copyFiles, depMap, depMapPath, bundleUMDPath,
 		generateIndex, ...other,
 	};
 }
