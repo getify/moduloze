@@ -44,7 +44,7 @@ function build(config,pathStr,code,depMap) {
 
 	var [ , origModulePathStr, ] = splitPath(config.from,pathStr);
 	var modulePathStr = addRelativeCurrentDir(origModulePathStr);
-	var moduleName = depMap[modulePathStr];
+	var moduleName = depMap[modulePathStr] || depMap[origModulePathStr];
 
 	// rename source file .cjs extension (per config)
 	modulePathStr = renameCJS(config,modulePathStr);

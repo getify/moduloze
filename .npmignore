@@ -6,3 +6,4 @@
 .mz-build/
 node_modules/
 coverage/
+/tmp*

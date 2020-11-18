@@ -33,7 +33,7 @@ function build(config,pathStr,code,depMap) {
 
 	var [ , origModulePathStr, ] = splitPath(config.from,pathStr);
 	var modulePathStr = addRelativeCurrentDir(origModulePathStr);
-	var moduleName = depMap[modulePathStr];
+	var moduleName = depMap[modulePathStr] || depMap[origModulePathStr];
 
 	// handle any file extension renaming, per config
 	modulePathStr = renameFileExtension(config,modulePathStr);

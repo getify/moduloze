@@ -1,7 +1,7 @@
 {
 	"name": "moduloze",
 	"description": "Convert CommonJS (CJS) modules to UMD and ESM formats",
-	"version": "0.4.2",
+	"version": "0.5.0",
 	"main": "src/index.js",
 	"bin": {
 		"mz": "./scripts/mz"
@@ -11,10 +11,10 @@
 		"prepare": "npm run build"
 	},
 	"dependencies": {
-		"@babel/generator": "~7.11.0",
-		"@babel/parser": "~7.11.0",
-		"@babel/traverse": "~7.11.0",
-		"@babel/types": "~7.11.0",
+		"@babel/generator": "~7.12.5",
+		"@babel/parser": "~7.12.5",
+		"@babel/traverse": "~7.12.5",
+		"@babel/types": "~7.12.5",
 		"dotenv": "~8.2.0",
 		"micromatch": "~4.0.2",
 		"minimist": "~1.2.5",
@@ -23,12 +23,12 @@
 		"toposort": "~2.0.2"
 	},
 	"mz-dependencies": {
-		"./cli.js": "CLI",
-		"./index.js": "Mz",
-		"./umd.js": "UMD",
-		"./esm.js": "ESM",
-		"./analysis.js": "Analysis",
-		"./helpers.js": "Helpers"
+		"cli.js": "CLI",
+		"index.js": "Mz",
+		"umd.js": "UMD",
+		"esm.js": "ESM",
+		"analysis.js": "Analysis",
+		"helpers.js": "Helpers"
 	},
 	"repository": "getify/moduloze",
 	"keywords": [

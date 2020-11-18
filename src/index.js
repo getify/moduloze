@@ -35,6 +35,7 @@ function defaultLibConfig({
 	namespaceImport = false,
 	namespaceExport = false,
 	exportDefaultFrom = false,
+	from = "",
 	...otherConfig
 } = {}) {
 	return {
@@ -45,6 +46,7 @@ function defaultLibConfig({
 		namespaceImport,
 		namespaceExport,
 		exportDefaultFrom,
+		from,
 		...otherConfig,
 	};
 }
