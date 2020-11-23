@@ -8,6 +8,7 @@ var micromatch = require("micromatch");
 var minimist = require("minimist");
 var mkdirp = require("mkdirp");
 var recursiveReadDir = require("recursive-readdir-sync");
+var terser = require("terser");
 
 var programVersion;
 var { build, bundleUMD, umdIndex, esmIndex, defaultLibConfig, } = require("./index.js");
@@ -23,8 +24,8 @@ var {
 dotenv.config();
 
 var params = minimist(process.argv.slice(2),{
-	boolean: [ "help","version","build-esm","build-umd","recursive", ],
-	string: [ "config","from","to","bundle-umd", ],
+	boolean: [ "help","version","build-esm","build-umd","recursive","minify", ],
+	string: [ "config","from","to","bundle-umd","prepend", ],
 	alias: {
 		"config": "c",
 		"recursive": "r",
@@ -32,6 +33,8 @@ var params = minimist(process.argv.slice(2),{
 		"build-umd": "u",
 		"bundle-umd": "b",
 		"dep-map": "m",
+		"minify": "n",
+		"prepend": "p",
 	},
 	default: {
 		help: false,
@@ -39,6 +42,8 @@ var params = minimist(process.argv.slice(2),{
 		recursive: false,
 		"build-esm": false,
 		"build-umd": false,
+		minify: false,
+		prepend: "",
 	},
 });
 
@@ -56,7 +61,7 @@ module.exports.CLI = CLI;
 
 // ******************************
 
-function CLI(version = "0.0.0?") {
+async function CLI(version = "0.0.0?") {
 	programVersion = version;
 
 	if (!loadConfig()) {
@@ -89,7 +94,13 @@ function CLI(version = "0.0.0?") {
 		// build each file (for each format)
 		for (let [ basePath, relativePath, ] of inputFiles) {
 			let code = fs.readFileSync(path.join(basePath,relativePath),"utf-8");
-			let res = build(config,relativePath,code,knownDeps);
+			let res;
+			try {
+		 		res = build(config,relativePath,code,knownDeps);
+		 	}
+		 	catch (err) {
+		 		throw new Error(`(${ path.join(basePath,relativePath) }) `);
+		 	}
 
 			// save UMD build (for bundling and/or catch-all generation)?
 			if (
@@ -114,8 +125,9 @@ function CLI(version = "0.0.0?") {
 					if (!mkdir(outputDir)) {
 						throw new Error(`Output directory (${ outputDir }) could not be created.`);
 					}
+					let contents = await processContents(res[format].code,path.basename(outputPath));
 					try {
-						fs.writeFileSync(outputPath,res[format].code,"utf-8");
+						fs.writeFileSync(outputPath,contents,"utf-8");
 					}
 					catch (err) {
 						throw new Error(`Output file (${ outputPath }) could not be created.`);
@@ -130,8 +142,9 @@ function CLI(version = "0.0.0?") {
 				let indexBuild = umdIndex(config,umdBuilds,knownDeps);
 				umdBuilds.push(indexBuild);
 				let outputPath = path.join(config.to,"umd",indexBuild.pathStr);
+				let contents = await processContents(indexBuild.code,path.basename(outputPath));
 				try {
-					fs.writeFileSync(outputPath,indexBuild.code,"utf-8");
+					fs.writeFileSync(outputPath,contents,"utf-8");
 				}
 				catch (err) {
 					throw new Error(`Generated index (${ outputPath }) could not be created.`);
@@ -141,8 +154,9 @@ function CLI(version = "0.0.0?") {
 				let indexBuild = esmIndex(config,esmBuilds,knownDeps);
 				esmBuilds.push(indexBuild);
 				let outputPath = path.join(config.to,"esm",indexBuild.pathStr);
+				let contents = await processContents(indexBuild.code,path.basename(outputPath));
 				try {
-					fs.writeFileSync(outputPath,indexBuild.code,"utf-8");
+					fs.writeFileSync(outputPath,contents,"utf-8");
 				}
 				catch (err) {
 					throw new Error(`Generated index (${ outputPath }) could not be created.`);
@@ -153,8 +167,9 @@ function CLI(version = "0.0.0?") {
 		// need to bundle all the UMDs together?
 		if (config.bundleUMDPath && umdBuilds.length > 0) {
 			let res = bundleUMD(config,umdBuilds);
+			let contents = await processContents(res.code,path.basename(config.bundleUMDPath));
 			try {
-				fs.writeFileSync(config.bundleUMDPath,res.code,"utf-8");
+				fs.writeFileSync(config.bundleUMDPath,contents,"utf-8");
 			}
 			catch (err) {
 				throw new Error(`UMD bundle (${ config.bundleUMDPath }) could not be created.`);
@@ -187,6 +202,32 @@ function CLI(version = "0.0.0?") {
 	catch (err) {
 		return showError(err);
 	}
+}
+
+async function processContents(contents,filename) {
+	if (params.minify) {
+		let result = await terser.minify(contents,{
+			mangle: {
+				keep_fnames: true,
+			},
+			compress: {
+				keep_fnames: true,
+			},
+			output: {
+				comments: /^!/,
+			},
+		});
+		if (!(result && result.code)) {
+			if (result.error) throw result.error;
+			else throw result;
+		}
+		contents = result.code;
+	}
+	if (params.prepend != "") {
+		let prepend = params.prepend.replace(/#FILENAME#/g,filename);
+		contents = `${prepend}${contents}`;
+	}
+	return contents;
 }
 
 function loadConfig() {
@@ -386,6 +427,10 @@ function printHelp() {
 	console.log(`                           [${ config.buildUMD }]`);
 	console.log("--bundle-umd={PATH}, -b    include UMD bundle");
 	console.log(`                           [${ config.bundleUMDPath || "./umd/bundle.js" }]`);
+	console.log("--minify, -n               minify output files");
+	console.log(`                           [${ config.minify }]`);
+	console.log("--prepend={TEXT}, -p       prepend TEXT to each file");
+	console.log(`                           [${ config.prepend }]`);
 	console.log("");
 }
 
@@ -414,6 +459,8 @@ function defaultCLIConfig({
 	buildESM,
 	buildUMD,
 	generateIndex = false,
+	minify = false,
+	prepend = "",
 	...other
 } = {}) {
 	// params override configs
@@ -424,14 +471,14 @@ function defaultCLIConfig({
 		("bundle-umd" in params || bundleUMDPath || "UMDBUNDLEPATH" in process.env) ?
 			resolvePath((params["bundle-umd"] || bundleUMDPath || process.env.UMDBUNDLEPATH || "./umd/bundle.js"),to) :
 			false;
-	recursive = params.recursive || recursive;
-	buildESM = params["build-esm"] || buildESM;
-	buildUMD = params["build-umd"] || buildUMD;
+	recursive = Boolean(params.recursive || recursive);
+	buildESM = Boolean(params["build-esm"] || buildESM);
+	buildUMD = Boolean(params["build-umd"] || buildUMD);
 
 	return {
 		from, to, recursive, buildESM, buildUMD, skip,
 		copyOnSkip, copyFiles, depMap, depMapPath, bundleUMDPath,
-		generateIndex, ...other,
+		generateIndex, minify, prepend, ...other,
 	};
 }
 

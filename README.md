@@ -79,7 +79,7 @@ For more details on limitations, please see the [Conversion Guide](./conversion-
 To use the CLI:
 
 ```cmd
-mz --from="./src" [--to="./dist"] [--recursive] [--build-umd] [--build-esm] [--bundle-umd] [--dep-map="./path/to/dep-map.json"] [--config="./path/to/.mzrc"]
+mz --from="./src" [--to="./dist"] [--recursive] [--build-umd] [--build-esm] [--bundle-umd] [--dep-map="./path/to/dep-map.json"] [--config="./path/to/.mzrc"] [--minify] [--prepend="prepend some text"]
 ```
 
 See `mz --help` output for all available parameter flags.
@@ -99,6 +99,10 @@ See `mz --help` output for all available parameter flags.
 * `--bundle-umd` (alias `-b`): specifies a path to write out a UMD bundle file (single UMD module exposing/exporting all converted UMD modules, by name); if specified but empty, defaults to `./umd/bundle.js` in the output directory; if omitted, skips UMD bundle
 
 * `--dep-map` (alias `-m`): specifies the path to a JSON file to load the dependency map from; defaults to "./package.json", in which it will look for a `mz-dependencies` field to get the dependency map contents; otherwise, should be to a standalone JSON file with the dependency map contents specified directly
+
+* `--minify` (alias `-n`): minify the output (using terser)
+
+* `--prepend` (alias `-p`): prepend some text (like copyright info) to each file. If the token `#FILENAME#` is present in the text, it will be replaced by each output file's base filename.
 
 * `--config` (alias `-c`): specifies the path to a configuration file (JSON format) for some or all settings; defaults to `./.mzrc` in the current working directory; see [Configuration Settings](#configuration-settings)
 
