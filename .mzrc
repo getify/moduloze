@@ -4,7 +4,8 @@
 	"to": "dist",
 	"skip": [
 		"**/umd-template.js",
-		"**/umd-bundle-template.js"
+		"**/umd-bundle-template.js",
+		"**/copyright-header.txt"
 	],
 	"copyOnSkip": true,
 	"ignoreUnknownDependency": true,

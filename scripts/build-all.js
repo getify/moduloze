@@ -54,6 +54,9 @@ console.log("*** Building Moduloze ***");
 			]
 		);
 
+		// delete unnecessarily copied copyright header
+		fs.unlinkSync(path.join(DIST_DIR,"umd","copyright-header.txt"));
+
 		console.log("Complete.");
 	}
 	catch (err) {
