@@ -1,7 +1,7 @@
 (function UMDBundle(context,umdDefs){
 	for (let [ name, dependencies, definition, ] of umdDefs) {
 		if (typeof define === "function" && define.amd) {
-			dependencies = Object.keys(dependencies).map(p => p.replace(/^\.\//,""));
+			dependencies = Object.values(dependencies);
 			define(name,dependencies,definition);
 		}
 		else if (typeof module !== "undefined" && module.exports) {
