@@ -1,6 +1,6 @@
 # Moduloze
 
-Convert CommonJS (CJS) modules to UMD and ESM formats
+Convert CommonJS (CJS) modules to UMD and ESM formats.
 
 ## Overview
 
@@ -86,9 +86,9 @@ See `mz --help` output for all available parameter flags.
 
 ### CLI Flags
 
-* `--from-path=PATH`: specifies the path to a directory (or a single file) containing the module(s) to convert; defaults to `./` in the current working directory
+* `--from=PATH`: specifies the path to a directory (or a single file) containing the module(s) to convert; defaults to `./` in the current working directory
 
-* `--to-path=PATH`: specifies the path to a directory to write the converted module file(s), in sub-directories corresponding to the chosen build format (`umd/` and `esm/`, respectively); defaults to `./.mz-build` in the current working directory
+* `--to=PATH`: specifies the path to a directory to write the converted module file(s), in sub-directories corresponding to the chosen build format (`umd/` and `esm/`, respectively); defaults to `./.mz-build` in the current working directory
 
 * `--recursive` (alias `-r`): traverse the source directory recursively
 
