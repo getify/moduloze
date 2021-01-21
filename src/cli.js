@@ -122,7 +122,7 @@ async function CLI(version = "0.0.0?") {
 				if (res[format]) {
 					let outputPath = path.join(config.to,format,res[format].pathStr);
 					let outputDir = path.dirname(outputPath);
-					if (!mkdir(outputDir)) {
+					if (mkdir(outputDir) !== true) {
 						throw new Error(`Output directory (${ outputDir }) could not be created.`);
 					}
 					let contents = await processContents(res[format].code,path.basename(outputPath));
@@ -190,7 +190,7 @@ async function CLI(version = "0.0.0?") {
 						let toPathStr = path.resolve(path.join(config.to,format),relativePath);
 						let toDir = path.dirname(toPathStr);
 
-						if (!mkdir(toDir)) {
+						if (mkdir(toDir) !== true) {
 							throw new Error(`While copying skipped file (${ toPathStr }), directory (${ toDir }) could not be created.`);
 						}
 						fs.writeFileSync(toPathStr,contents);
@@ -285,7 +285,7 @@ function checkArgsAndConfig() {
 		// should we create the default output target directory?
 		if (/\.mz-build$/.test(config.to)) {
 			// double-check the path was created?
-			if (!mkdir(config.to)) {
+			if (mkdir(config.to) !== true) {
 				return showError(`Default output directory (${ config.to }) could not be created.`);
 			}
 		}
@@ -296,7 +296,7 @@ function checkArgsAndConfig() {
 		if (config.buildESM) {
 			let esmPath = path.join(config.to,"esm");
 			if (!checkPath(esmPath)) {
-				if (!mkdir(esmPath)) {
+				if (mkdir(esmPath) !== true) {
 					return showError(`Output directory (${ esmPath }) could not be created.`);
 				}
 			}
@@ -304,7 +304,7 @@ function checkArgsAndConfig() {
 		if (config.buildUMD) {
 			let umdPath = path.join(config.to,"umd");
 			if (!checkPath(umdPath)) {
-				if (!mkdir(umdPath)) {
+				if (mkdir(umdPath) !== true) {
 					return showError(`Output directory (${ umdPath }) could not be created.`);
 				}
 			}
