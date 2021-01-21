@@ -2,7 +2,6 @@
 
 var { default: traverse, } = require("@babel/traverse");
 var T = require("@babel/types");
-var { default: generate, } = require("@babel/generator");
 var { parse, } = require("@babel/parser");
 
 var {
