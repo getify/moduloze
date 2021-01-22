@@ -99,7 +99,7 @@ async function CLI(version = "0.0.0?") {
 		 		res = build(config,relativePath,code,knownDeps);
 		 	}
 		 	catch (err) {
-		 		throw new Error(`(${ path.join(basePath,relativePath) }) `);
+		 		throw new Error(`${err.toString()} (${ path.join(basePath,relativePath) }) `);
 		 	}
 
 			// save UMD build (for bundling and/or catch-all generation)?
