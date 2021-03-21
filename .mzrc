@@ -8,6 +8,5 @@
 		"**/copyright-header.txt"
 	],
 	"copyOnSkip": true,
-	"ignoreUnknownDependency": true,
 	".mjs": true
 }

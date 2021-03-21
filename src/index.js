@@ -1,5 +1,13 @@
 "use strict";
 
+var path = require("path");
+
+var {
+	expandHomeDir,
+	qualifyDepPaths,
+	isDirectory,
+} = require("./helpers.js");
+
 var buildUMD = require("./umd.js");
 var { bundle: bundleUMD, index: umdIndex, } = require("./umd.js");
 var buildESM = require("./esm.js");
@@ -15,13 +23,27 @@ module.exports.esmIndex = esmIndex;
 function build(config,pathStr,code,depMap = {}) {
 	config = defaultLibConfig(config);
 
+	var absoluteFromPathStr = path.resolve(expandHomeDir(config.from));
+	var absoluteFromDirStr = (
+		isDirectory(absoluteFromPathStr) ?
+			absoluteFromPathStr :
+			path.dirname(absoluteFromPathStr)
+	);
+	config.from = absoluteFromDirStr;
+
+	depMap = qualifyDepPaths(depMap,absoluteFromDirStr);
+
 	var output = {};
 
-	if (config.buildESM) {
-		output.esm = buildESM(config,pathStr,code,depMap);
-	}
 	if (config.buildUMD) {
 		output.umd = buildUMD(config,pathStr,code,depMap);
+		// save updated depMap
+		depMap = output.umd.depMap;
+	}
+	if (config.buildESM) {
+		output.esm = buildESM(config,pathStr,code,depMap);
+		// save updated depMap
+		depMap = output.esm.depMap;
 	}
 
 	return output;

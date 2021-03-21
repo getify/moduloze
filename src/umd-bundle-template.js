@@ -5,7 +5,7 @@
 			define(name,dependencies,definition);
 		}
 		else if (typeof module !== "undefined" && module.exports) {
-			dependencies = Object.keys(dependencies).map(p => require(p));
+			dependencies = Object.entries(dependencies).map(([p,n]) => module.exports[n] || require(p));
 			module.exports[name] = definition(...dependencies);
 		}
 		else {

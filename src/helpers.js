@@ -11,7 +11,9 @@ module.exports.isFunction = isFunction;
 module.exports.isAssignmentTarget = isAssignmentTarget;
 module.exports.expandHomeDir = expandHomeDir;
 module.exports.addRelativeCurrentDir = addRelativeCurrentDir;
-module.exports.splitPath = splitPath;
+module.exports.rootRelativePath = rootRelativePath;
+module.exports.qualifyDepPaths = qualifyDepPaths;
+module.exports.isPathBasedSpecifier = isPathBasedSpecifier;
 module.exports.isDirectory = isDirectory;
 module.exports.checkPath = checkPath;
 module.exports.generateName = generateName;
@@ -73,15 +75,33 @@ function addRelativeCurrentDir(pathStr) {
 	);
 }
 
-function splitPath(fromPathStr,pathStr) {
-	var fromDir = path.resolve(fromPathStr);
-	if (!isDirectory(fromDir)) {
-		fromDir = path.dirname(fromDir);
+function rootRelativePath(rootFromPathStr,pathStr) {
+	var absolutePathStr = path.resolve(rootFromPathStr,pathStr);
+	return path.relative(rootFromPathStr,absolutePathStr);
+}
+
+function qualifyDepPaths(depMap,rootFromPathStr) {
+	var depNames = new Set();
+	var retMap = {};
+	for (let [depPathStr,depName] of Object.entries(depMap)) {
+		if (!depNames.has(depName)) {
+			depNames.add(depName);
+			let absoluteDepPathStr = path.resolve(rootFromPathStr,expandHomeDir(depPathStr));
+			let relativeDepPathStr = rootRelativePath(rootFromPathStr,absoluteDepPathStr);
+			retMap[relativeDepPathStr] = depName;
+		}
+		else {
+			throw new Error(`Dependency-map name conflict: ${depName}`);
+		}
 	}
-	var fullPathStr = path.resolve(fromDir,pathStr);
-	var basePath = fullPathStr.substr(0,fromDir.length);
-	var relativePath = fullPathStr.substr(fromDir.length + 1);
-	return [ basePath, relativePath, ];
+	return retMap;
+}
+
+function isPathBasedSpecifier(specifier) {
+	return (
+		/^(\.{0,2}|([a-z]+:)|~)[\/\\]/i.test(specifier) &&
+		/\.[a-z]+$/.test(specifier)
+	);
 }
 
 function isDirectory(pathStr) {

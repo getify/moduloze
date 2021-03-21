@@ -14,8 +14,8 @@ var programVersion;
 var { build, bundleUMD, umdIndex, esmIndex, defaultLibConfig, } = require("./index.js");
 var {
 	expandHomeDir,
-	addRelativeCurrentDir,
-	splitPath,
+	rootRelativePath,
+	qualifyDepPaths,
 	isDirectory,
 	checkPath,
 	generateName,
@@ -71,19 +71,20 @@ async function CLI(version = "0.0.0?") {
 	// populate known-dependencies map from configuration (if any)
 	var knownDeps = {};
 	if (config.depMap) {
-		for (let [ depPath, depName, ] of Object.entries(config.depMap)) {
-			let [ , relativePath, ] = splitPath(config.from,depPath);
-			relativePath = addRelativeCurrentDir(relativePath);
-			knownDeps[relativePath] =
-				(typeof depName == "string" && depName != "") ? depName : generateName();
-		}
+		let fromDirStr = resolvePath(config.from);
+		fromDirStr = (
+			isDirectory(fromDirStr) ?
+				fromDirStr :
+				path.dirname(fromDirStr)
+		);
+		knownDeps = qualifyDepPaths(config.depMap,fromDirStr);
 	}
 
-	// add discovered input files to known-depenedencies map
+	// add discovered input files to known-dependencies map
 	var inputFiles = getInputFiles();
-	for (let [ , relativePath, ] of inputFiles) {
-		if (!(relativePath in knownDeps)) {
-			knownDeps[relativePath] = generateName();
+	for (let [ , rootRelativePath, ] of inputFiles) {
+		if (!(rootRelativePath in knownDeps)) {
+			knownDeps[rootRelativePath] = generateName();
 		}
 	}
 
@@ -96,11 +97,13 @@ async function CLI(version = "0.0.0?") {
 			let code = fs.readFileSync(path.join(basePath,relativePath),"utf-8");
 			let res;
 			try {
-		 		res = build(config,relativePath,code,knownDeps);
-		 	}
-		 	catch (err) {
-		 		throw new Error(`${err.toString()} (${ path.join(basePath,relativePath) }) `);
-		 	}
+				res = build(config,relativePath,code,knownDeps);
+				// save updated depMap
+				knownDeps = res.esm ? res.esm.depMap : res.umd.depMap;
+			}
+			catch (err) {
+				throw new Error(`${err.toString()} (${ path.join(basePath,relativePath) }) `);
+			}
 
 			// save UMD build (for bundling and/or catch-all generation)?
 			if (
@@ -113,7 +116,7 @@ async function CLI(version = "0.0.0?") {
 				umdBuilds.push(res.umd);
 			}
 			// save ESM build (for catch-all generation)?
-			else if (res.esm && config.generateIndex) {
+			if (res.esm && config.generateIndex) {
 				esmBuilds.push(res.esm);
 			}
 
@@ -179,15 +182,15 @@ async function CLI(version = "0.0.0?") {
 		// copy any skipped files?
 		if (config.copyFiles && config.copyFiles.length > 0) {
 			for (let filePathStr of config.copyFiles) {
-				let [ basePath, relativePath, ] = splitPath(config.from,filePathStr);
-				let fromPathStr = path.join(basePath,relativePath);
+				let fromPathStr = path.resolve(config.from,filePathStr);
+				let relativePathStr = rootRelativePath(config.from,fromPathStr);
 				let contents = fs.readFileSync(fromPathStr);
 				for (let format of [ "esm", "umd", ]) {
 					if (
 						(format == "esm" && config.buildESM) ||
 						(format == "umd" && config.buildUMD)
 					) {
-						let toPathStr = path.resolve(path.join(config.to,format),relativePath);
+						let toPathStr = path.resolve(path.join(config.to,format),relativePathStr);
 						let toDir = path.dirname(toPathStr);
 
 						if (mkdir(toDir) !== true) {
@@ -377,6 +380,7 @@ function getInputFiles() {
 	// otherwise, assume only a single input file
 	else {
 		files = [ config.from, ];
+		config.from = path.dirname(config.from);
 	}
 
 	// any skip patterns to remove?
@@ -398,8 +402,10 @@ function getInputFiles() {
 
 	// split all paths into base and relative
 	files = files.map(function fixPaths(pathStr){
-		var [ basePath, relativePath, ] = splitPath(config.from,pathStr);
-		return [ basePath, addRelativeCurrentDir(relativePath), ];
+		return [
+			path.resolve(config.from),
+			rootRelativePath(config.from,pathStr),
+		];
 	});
 
 	return files;

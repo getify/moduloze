@@ -1,5 +1,7 @@
 "use strict";
 
+var path = require("path");
+
 var T = require("@babel/types");
 var { default: template, } = require("@babel/template");
 var { default: generate, } = require("@babel/generator");
@@ -7,8 +9,10 @@ var { default: generate, } = require("@babel/generator");
 var {
 	expandHomeDir,
 	addRelativeCurrentDir,
-	splitPath,
 	generateName,
+	rootRelativePath,
+	qualifyDepPaths,
+	isPathBasedSpecifier,
 } = require("./helpers.js");
 var {
 	identifyRequiresAndExports,
@@ -24,6 +28,8 @@ module.exports.index = index;
 // ******************************
 
 function build(config,pathStr,code,depMap) {
+	depMap = { ...depMap, };
+
 	var {
 		programAST,
 		programPath,
@@ -31,19 +37,30 @@ function build(config,pathStr,code,depMap) {
 		convertExports,
 	} = identifyRequiresAndExports(pathStr,code);
 
-	var [ , origModulePathStr, ] = splitPath(config.from,pathStr);
-	var modulePathStr = addRelativeCurrentDir(origModulePathStr);
-	var moduleName = depMap[modulePathStr] || depMap[origModulePathStr];
-
-	// handle any file extension renaming, per config
-	modulePathStr = renameFileExtension(config,modulePathStr);
+	var absoluteFromDirStr = config.from;
+	var absoluteBuildPathStr =
+		path.resolve(
+			absoluteFromDirStr,
+			expandHomeDir(pathStr)
+		);
+	var rootRelativeBuildPathStr =
+		rootRelativePath(
+			absoluteFromDirStr,
+			absoluteBuildPathStr
+		);
+	var moduleName = depMap[rootRelativeBuildPathStr];
 
 	// unknown module?
 	if (!moduleName) {
-		modulePathStr = origModulePathStr;
+		if (config.ignoreUnknownDependency) {
+			moduleName = generateName();
+			depMap[pathStr] = moduleName;
+		}
+		else {
+			throw new Error(`Unknown module: ${ pathStr }`);
+		}
 
-		moduleName = generateName();
-		depMap[modulePathStr] = moduleName;
+		rootRelativeBuildPathStr = pathStr;
 	}
 	var refDeps = {};
 	var $module$exports;
@@ -97,27 +114,73 @@ function build(config,pathStr,code,depMap) {
 	// convert all combo require/export statements
 	for (let [ stmt, combo, ] of convertCombos.entries()) {
 		let req = combo.requires[0];
-		// normalize dependency path
-		let [ , origSpecifierPath, ] = splitPath(config.from,expandHomeDir(req.specifier));
-		let specifierPath = addRelativeCurrentDir(origSpecifierPath);
-		if (!(specifierPath in depMap)) {
-			specifierPath = origSpecifierPath;
+		let specifierPath;
+
+		// path-based specifier?
+		if (isPathBasedSpecifier(req.specifier)) {
+			let absoluteDepPathStr = path.resolve(
+				path.dirname(absoluteBuildPathStr),
+				expandHomeDir(req.specifier)
+			);
+			let rootRelativeDepPathStr =
+				rootRelativePath(
+					absoluteFromDirStr,
+					absoluteDepPathStr
+				);
+
+			// dependency self-reference? (not allowed)
+			if (rootRelativeDepPathStr == rootRelativeBuildPathStr) {
+				throw new Error(`Module dependency is an illegal self-reference: ${ req.specifier }`);
+			}
+
+			let depName = depMap[rootRelativeDepPathStr];
+			let buildRelativeDepPathStr =
+				rootRelativePath(
+					path.dirname(absoluteBuildPathStr),
+					expandHomeDir(req.specifier)
+				);
+
+			// unknown/unnamed dependency?
+			if (!depName) {
+				if (config.ignoreUnknownDependency) {
+					depName = generateName();
+					depMap[rootRelativeDepPathStr] = depName;
+				}
+				else {
+					throw new Error(`Unknown dependency: ${ req.specifier }`);
+				}
+			}
+
+			// track which known dependencies from the map we've
+			// actually referenced
+			refDeps[rootRelativeDepPathStr] = buildRelativeDepPathStr;
+
+			specifierPath = addRelativeCurrentDir(
+				renameFileExtension(config,buildRelativeDepPathStr)
+			);
 		}
-		let depName = depMap[specifierPath];
+		// otherwise, assume name-based specifier
+		else {
+			let specifierKey = `:::${req.specifier}`;
+			let depName = depMap[specifierKey];
 
-		// handle any file extension renaming, per config
-		specifierPath = renameFileExtension(config,specifierPath);
+			// unknown/unnamed dependency?
+			if (!depName) {
+				if (config.ignoreUnknownDependency) {
+					depName = generateName();
+					depMap[specifierKey] = depName;
+				}
+				else {
+					throw new Error(`Unknown dependency: ${ req.specifier }`);
+				}
+			}
 
-		// unknown/unnamed dependency?
-		if (!depName) {
+			// track which known dependencies from the map we've
+			// actually referenced
+			refDeps[specifierKey] = specifierKey;
+
 			specifierPath = req.specifier;
-
-			depName = generateName();
-			depMap[specifierPath] = depName;
 		}
-
-		// track which dependencies from the map we've actually referenced
-		refDeps[specifierPath] = depName;
 
 		let expt = combo.exports[0];
 
@@ -244,27 +307,73 @@ function build(config,pathStr,code,depMap) {
 
 	// convert all requires to ESM imports
 	for (let req of convertRequires) {
-		// normalize dependency path
-		let [ , origSpecifierPath, ] = splitPath(config.from,expandHomeDir(req.specifier));
-		let specifierPath = addRelativeCurrentDir(origSpecifierPath);
-		if (!(specifierPath in depMap)) {
-			specifierPath = origSpecifierPath;
+		let specifierPath;
+
+		// path-based specifier?
+		if (isPathBasedSpecifier(req.specifier)) {
+			let absoluteDepPathStr = path.resolve(
+				path.dirname(absoluteBuildPathStr),
+				expandHomeDir(req.specifier)
+			);
+			let rootRelativeDepPathStr =
+				rootRelativePath(
+					absoluteFromDirStr,
+					absoluteDepPathStr
+				);
+
+			// dependency self-reference? (not allowed)
+			if (rootRelativeDepPathStr == rootRelativeBuildPathStr) {
+				throw new Error(`Module dependency is an illegal self-reference: ${ req.specifier }`);
+			}
+
+			let depName = depMap[rootRelativeDepPathStr];
+			let buildRelativeDepPathStr =
+				rootRelativePath(
+					path.dirname(absoluteBuildPathStr),
+					expandHomeDir(req.specifier)
+				);
+
+			// unknown/unnamed dependency?
+			if (!depName) {
+				if (config.ignoreUnknownDependency) {
+					depName = generateName();
+					depMap[rootRelativeDepPathStr] = depName;
+				}
+				else {
+					throw new Error(`Unknown dependency: ${ req.specifier }`);
+				}
+			}
+
+			// track which known dependencies from the map we've
+			// actually referenced
+			refDeps[rootRelativeDepPathStr] = buildRelativeDepPathStr;
+
+			specifierPath = addRelativeCurrentDir(
+				renameFileExtension(config,buildRelativeDepPathStr)
+			);
 		}
-		let depName = depMap[specifierPath];
+		// otherwise, assume name-based specifier
+		else {
+			let specifierKey = `:::${req.specifier}`;
+			let depName = depMap[specifierKey];
 
-		// handle any file extension renaming, per config
-		specifierPath = renameFileExtension(config,specifierPath);
+			// unknown/unnamed dependency?
+			if (!depName) {
+				if (config.ignoreUnknownDependency) {
+					depName = generateName();
+					depMap[specifierKey] = depName;
+				}
+				else {
+					throw new Error(`Unknown dependency: ${ req.specifier }`);
+				}
+			}
 
-		// unknown/unnamed dependency?
-		if (!depName) {
+			// track which known dependencies from the map we've
+			// actually referenced
+			refDeps[specifierKey] = specifierKey;
+
 			specifierPath = req.specifier;
-
-			depName = generateName();
-			depMap[specifierPath] = depName;
 		}
-
-		// track which dependencies from the map we've actually referenced
-		refDeps[specifierPath] = depName;
 
 		// process require() statements/expressions
 		if (req.esmType == "bare-import") {
@@ -514,7 +623,16 @@ function build(config,pathStr,code,depMap) {
 	// remove any strict-mode directive (since ESM is automatically strict-mode)
 	programAST.program.directives.length = 0;
 
-	return { ...generate(programAST), ast: programAST, refDeps: depMap, pathStr: modulePathStr, name: moduleName, };
+	return {
+		...generate(programAST),
+		ast: programAST,
+		depMap,
+		refDeps,
+		// rename source file extension (per config)
+		pathStr: renameFileExtension(config,rootRelativeBuildPathStr),
+		origPathStr: rootRelativeBuildPathStr,
+		name: moduleName,
+	};
 
 
 	// *****************************
@@ -532,25 +650,52 @@ function build(config,pathStr,code,depMap) {
 }
 
 function index(config,esmBuilds,depMap) {
-	var modulePathStr = "./index.js";
-	var altModulePathStr = modulePathStr.replace(/\.js$/,".cjs");
-	var moduleName = depMap[modulePathStr || altModulePathStr] || "Index";
+	var indexExt = (
+		// any of the dependencies use ".cjs" file extension?
+		Object.keys(depMap).find(pathStr => /\.cjs$/.test(pathStr)) ?
+			"cjs" :
+			"js"
+	);
+	var indexPathStr = `./index.${indexExt}`;
+	var altModulePathStr = (indexExt == "cjs") ? "index.js" : "index.cjs";
+	var indexName = depMap[indexPathStr || altModulePathStr] || "Index";
 
-	// remove a dependency self-reference (if any)
-	depMap = Object.fromEntries(
-		Object.entries(depMap).filter(([ dPath, dName ]) => (dPath != modulePathStr && dPath != altModulePathStr))
+	// build list of indexable resources
+	var indexResources = (
+		Object.entries(depMap).filter(([ rPath, ]) => (
+			// make sure we're not indexing name-based resources
+			!rPath.startsWith(":::") &&
+
+			// make sure we're only indexing known builds
+			esmBuilds.find(build => build.origPathStr == rPath) &&
+
+			// prevent index self-reference (if any)
+			![indexPathStr,altModulePathStr].includes(rPath)
+		))
 	);
 
 	// handle any file extension renaming, per config
-	modulePathStr = renameFileExtension(config,modulePathStr);
+	indexPathStr = renameFileExtension(config,indexPathStr);
 
 	// start with empty program
 	var esmAST = T.File(template.program("")());
 
-	var dependencies = Object.entries(depMap);
-	for (let [ depPath, depName, ] of dependencies) {
-		// handle any file extension renaming, per config
-		depPath = renameFileExtension(config,depPath);
+	for (let [ resKey, resVal, ] of indexResources) {
+		let depName = resVal;
+		let depPathStr;
+
+		// name-based dependency specifier?
+		if (resKey.startsWith(":::")) {
+			depPathStr = resKey.slice(3);
+		}
+		// otherwise, assume path-based dependency specifier
+		else {
+			// NOTE: resKey here is a root-relative path
+			depPathStr = resKey;
+			depPathStr = addRelativeCurrentDir(depPathStr);
+			// rename source file .cjs extension (per config)
+			depPathStr = renameFileExtension(config,depPathStr);
+		}
 
 		let target = T.Identifier(depName);
 
@@ -569,21 +714,29 @@ function index(config,esmBuilds,depMap) {
 						T.ExportSpecifier(T.Identifier("default"),target)
 					),
 				],
-				T.StringLiteral(depPath)
+				T.StringLiteral(depPathStr)
 			)
 		);
 	}
 
-	return { ...generate(esmAST), ast: esmAST, refDeps: depMap, pathStr: modulePathStr, name: moduleName, };
+	return {
+		...generate(esmAST),
+		ast: esmAST,
+		depMap,
+		refDeps: depMap,
+		pathStr: indexPathStr,
+		origPathStr: indexPathStr,
+		name: indexName,
+	};
 }
 
 function renameFileExtension(config,pathStr) {
 	// handle any file extension renaming, per config
 	if (config[".cjs"]) {
-		return pathStr.replace(/\.cjs$/,".js");
+		pathStr = pathStr.replace(/\.cjs$/,".js");
 	}
-	else if (config[".mjs"]) {
-		return pathStr.replace(/\.c?js$/,".mjs");
+	if (config[".mjs"]) {
+		pathStr = pathStr.replace(/\.c?js$/,".mjs");
 	}
 	return pathStr;
 }

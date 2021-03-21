@@ -12,8 +12,10 @@ var toposort = require("toposort");
 var {
 	expandHomeDir,
 	addRelativeCurrentDir,
-	splitPath,
 	generateName,
+	rootRelativePath,
+	qualifyDepPaths,
+	isPathBasedSpecifier,
 } = require("./helpers.js");
 var {
 	identifyRequiresAndExports,
@@ -35,6 +37,8 @@ var UMDBundleTemplate = fs.readFileSync(path.join(__dirname,"umd-bundle-template
 
 
 function build(config,pathStr,code,depMap) {
+	depMap = { ...depMap, };
+
 	var {
 		programAST,
 		programPath,
@@ -42,56 +46,103 @@ function build(config,pathStr,code,depMap) {
 		convertExports,
 	} = identifyRequiresAndExports(pathStr,code);
 
-	var [ , origModulePathStr, ] = splitPath(config.from,pathStr);
-	var modulePathStr = addRelativeCurrentDir(origModulePathStr);
-	var moduleName = depMap[modulePathStr] || depMap[origModulePathStr];
-
-	// rename source file .cjs extension (per config)
-	modulePathStr = renameCJS(config,modulePathStr);
+	var absoluteFromDirStr = config.from;
+	var absoluteBuildPathStr =
+		path.resolve(
+			absoluteFromDirStr,
+			expandHomeDir(pathStr)
+		);
+	var rootRelativeBuildPathStr =
+		rootRelativePath(
+			absoluteFromDirStr,
+			absoluteBuildPathStr
+		);
+	var moduleName = depMap[rootRelativeBuildPathStr];
 
 	// unknown module?
 	if (!moduleName) {
-		modulePathStr = origModulePathStr;
-
 		if (config.ignoreUnknownDependency) {
 			moduleName = generateName();
-			depMap[modulePathStr] = moduleName;
+			depMap[pathStr] = moduleName;
 		}
 		else {
-			throw new Error(`Unknown module: ${ modulePathStr }`);
+			throw new Error(`Unknown module: ${ pathStr }`);
 		}
+
+		rootRelativeBuildPathStr = pathStr;
 	}
 	var refDeps = {};
 	var defaultExportSet = false;
 
 	// convert all requires to UMD dependencies
 	for (let req of convertRequires) {
-		// normalize dependency path
-		let [ , origSpecifierPath, ] = splitPath(config.from,expandHomeDir(req.specifier));
-		let specifierPath = addRelativeCurrentDir(origSpecifierPath);
-		let depName = depMap[specifierPath];
+		let depName;
 
-		// rename source file .cjs extension (per config)
-		specifierPath = renameCJS(config,specifierPath);
+		// path-based specifier?
+		if (isPathBasedSpecifier(req.specifier)) {
+			let absoluteDepPathStr = path.resolve(
+				path.dirname(absoluteBuildPathStr),
+				expandHomeDir(req.specifier)
+			);
+			let rootRelativeDepPathStr =
+				rootRelativePath(
+					absoluteFromDirStr,
+					absoluteDepPathStr
+				);
 
-		// unknown/unnamed dependency?
-		if (!depName) {
-			specifierPath = req.specifier;
-
-			if (
-				req.umdType == "remove-require-unique" ||
-				config.ignoreUnknownDependency
-			) {
-				depName = generateName();
-				depMap[specifierPath] = depName;
+			// dependency self-reference? (not allowed)
+			if (rootRelativeDepPathStr == rootRelativeBuildPathStr) {
+				throw new Error(`Module dependency is an illegal self-reference: ${ req.specifier }`);
 			}
-			else {
-				throw new Error(`Unknown dependency: ${ req.specifier }`);
+
+			depName = depMap[rootRelativeDepPathStr];
+			let buildRelativeDepPathStr =
+				rootRelativePath(
+					path.dirname(absoluteBuildPathStr),
+					expandHomeDir(req.specifier)
+				);
+
+			// unknown/unnamed dependency?
+			if (!depName) {
+				if (
+					req.umdType == "remove-require-unique" ||
+					config.ignoreUnknownDependency
+				) {
+					depName = generateName();
+					depMap[rootRelativeDepPathStr] = depName;
+				}
+				else {
+					throw new Error(`Unknown dependency: ${ req.specifier }`);
+				}
 			}
+
+			// track which known dependencies from the map we've
+			// actually referenced
+			refDeps[rootRelativeDepPathStr] = buildRelativeDepPathStr;
 		}
+		// otherwise, assume name-based specifier
+		else {
+			let specifierKey = `:::${req.specifier}`;
+			depName = depMap[specifierKey];
 
-		// track which dependencies from the map we've actually referenced
-		refDeps[specifierPath] = depName;
+			// unknown/unnamed dependency?
+			if (!depName) {
+				if (
+					req.umdType == "remove-require-unique" ||
+					config.ignoreUnknownDependency
+				) {
+					depName = generateName();
+					depMap[specifierKey] = depName;
+				}
+				else {
+					throw new Error(`Unknown dependency: ${ req.specifier }`);
+				}
+			}
+
+			// track which known dependencies from the map we've
+			// actually referenced
+			refDeps[specifierKey] = specifierKey;
+		}
 
 		// process require() statements/expressions
 		if (req.umdType == "remove-require-unique") {
@@ -162,11 +213,27 @@ function build(config,pathStr,code,depMap) {
 				var defFuncPath = callExprPath.get("arguments.3");
 				if (dependencies.length > 0) {
 					let dependenciesPath = callExprPath.get("arguments.2");
-					for (let [ depPath, depName, ] of dependencies) {
+					for (let [ depKey, depVal, ] of dependencies) {
+						let depName = depMap[depKey];
+						let depPathStr;
+
+						// name-based dependency specifier?
+						if (depKey.startsWith(":::")) {
+							depPathStr = depKey.slice(3);
+						}
+						// otherwise, assume path-based dependency specifier
+						else {
+							// NOTE: depVal here is a build-relative path
+							depPathStr = depVal;
+							depPathStr = addRelativeCurrentDir(depPathStr);
+							// rename source file .cjs extension (per config)
+							depPathStr = renameCJS(config,depPathStr);
+						}
+
 						// add dependency entry
 						dependenciesPath.node.properties.push(
 							T.ObjectProperty(
-								T.StringLiteral(depPath),
+								T.StringLiteral(depPathStr),
 								T.StringLiteral(depName)
 							)
 						);
@@ -205,7 +272,16 @@ function build(config,pathStr,code,depMap) {
 		stmt.remove();
 	}
 
-	return { ...generate(programAST), ast: programAST, refDeps, pathStr: modulePathStr, name: moduleName, };
+	return {
+		...generate(programAST),
+		ast: programAST,
+		depMap,
+		refDeps,
+		// rename source file .cjs extension (per config)
+		pathStr: renameCJS(config,rootRelativeBuildPathStr),
+		origPathStr: rootRelativeBuildPathStr,
+		name: moduleName,
+	};
 
 
 	// *****************************
@@ -215,7 +291,7 @@ function build(config,pathStr,code,depMap) {
 
 		// already assigned to module-exports? only one assignment allowed per module
 		if (defaultExportSet) {
-			throw new Error("Multiple replacements of exports not allowed in the same module");
+			throw new Error("Multiple re-assignments of 'module.exports' not allowed in the same module");
 		}
 		defaultExportSet = true;
 	}
@@ -225,7 +301,7 @@ function build(config,pathStr,code,depMap) {
 function bundle(config,umdBuilds) {
 	try {
 		// make sure dependencies are ordered correctly
-		umdBuilds = sortDependencies(umdBuilds);
+		umdBuilds = sortDependencies(config,umdBuilds);
 	}
 	catch (err) {
 		if (!config.ignoreCircularDependency) {
@@ -249,10 +325,39 @@ function bundle(config,umdBuilds) {
 
 	// insert all UMDs
 	for (let umd of umdBuilds) {
-		// append UMD to program body
-		programPath.pushContainer("body",
-			T.clone(umd.ast.program.body[0],/*deep=*/true,/*withoutLoc=*/true)
-		);
+		// skip an auto-generated (index) build?
+		if (umd.autoGenerated) {
+			continue;
+		}
+		let umdNode = T.clone(umd.ast.program.body[0],/*deep=*/true,/*withoutLoc=*/true);
+
+		let props = umdNode.expression.arguments[2].properties;
+		if (props.length > 0) {
+			let absoluteBuildDirStr = path.dirname(
+				path.resolve(config.from,umd.pathStr)
+			);
+
+			// check all dep paths to see if they need to be
+			// rewritten to be root-relative instead of
+			// build-relative
+			for (let prop of props) {
+				// path-based dependency specifier?
+				if (isPathBasedSpecifier(prop.key.value)) {
+					let buildRelativeDepPathStr = prop.key.value;
+					let absoluteDepPathStr = path.resolve(
+						absoluteBuildDirStr,
+						buildRelativeDepPathStr
+					);
+					let rootRelativeDepPathStr = addRelativeCurrentDir(
+						rootRelativePath(config.from,absoluteDepPathStr)
+					);
+					prop.key.value = rootRelativeDepPathStr;
+				}
+			}
+		}
+
+		// temporarily append UMD to program body
+		programPath.pushContainer("body",umdNode);
 
 		// reference inserted UMD's call expression
 		let callExprPath = programPath.get("body.1.expression");
@@ -269,7 +374,7 @@ function bundle(config,umdBuilds) {
 			]
 		));
 
-		// remove inserted UMD
+		// remove previously inserted UMD
 		programPath.get("body.1").remove();
 	}
 
@@ -279,7 +384,7 @@ function bundle(config,umdBuilds) {
 function index(config,umdBuilds,depMap) {
 	try {
 		// make sure dependencies are ordered correctly
-		umdBuilds = sortDependencies(umdBuilds);
+		umdBuilds = sortDependencies(config,umdBuilds);
 	}
 	catch (err) {
 		if (!config.ignoreCircularDependency) {
@@ -287,17 +392,34 @@ function index(config,umdBuilds,depMap) {
 		}
 	}
 
-	var modulePathStr = "./index.js";
-	var altModulePathStr = modulePathStr.replace(/\.js$/,".cjs");
-	var moduleName = depMap[modulePathStr || altModulePathStr] || "Index";
+	var indexExt = (
+		// any of the dependencies use ".cjs" file extension?
+		Object.keys(depMap).find(pathStr => /\.cjs$/.test(pathStr)) ?
+			"cjs" :
+			"js"
+	);
+	var indexPathStr = `./index.${indexExt}`;
+	var altModulePathStr = (indexExt == "cjs") ? "index.js" : "index.cjs";
+	var indexName = depMap[indexPathStr || altModulePathStr] || "Index";
 
-	// remove a dependency self-reference (if any)
-	depMap = Object.fromEntries(
-		Object.entries(depMap).filter(([ dPath, dName ]) => (dPath != modulePathStr && dPath != altModulePathStr))
+	// build list of indexable resources
+	var indexResources = (
+		Object.entries(depMap).filter(([ rPath, ]) => (
+			// make sure we're not indexing name-based resources
+			!rPath.startsWith(":::") &&
+
+			// make sure we're only indexing known builds
+			umdBuilds.find(build => build.origPathStr == rPath) &&
+
+			// prevent index self-reference (if any)
+			![indexPathStr,altModulePathStr].includes(rPath)
+		))
 	);
 
 	// handle any file extension renaming, per config
-	modulePathStr = renameCJS(config,modulePathStr);
+	indexPathStr = renameCJS(config,indexPathStr);
+
+	var refDeps = {};
 
 	// construct UMD from template
 	var umdAST = parse(UMDTemplate);
@@ -307,42 +429,56 @@ function index(config,umdBuilds,depMap) {
 				var callExprPath = path.get("body.0.expression");
 
 				// set module-name
-				callExprPath.get("arguments.0").replaceWith(T.StringLiteral(moduleName));
+				callExprPath.get("arguments.0").replaceWith(T.StringLiteral(indexName));
 
 				// set dependencies and named parameters
-				var dependencies = Object.entries(depMap);
 				var defFuncPath = callExprPath.get("arguments.3");
 				var defFuncBodyPath = defFuncPath.get("body");
 
 				var returnObjectContents = [];
 
-				if (dependencies.length > 0) {
-					let dependenciesPath = callExprPath.get("arguments.2");
-					for (let [ depPath, depName, ] of dependencies) {
-						// rename source file .cjs extension (per config)
-						depPath = renameCJS(config,depPath);
+				var dependenciesPath = callExprPath.get("arguments.2");
+				for (let [ resKey, resVal, ] of indexResources) {
+					let depName = resVal;
+					let depPathStr;
 
-						// add dependency entry
-						dependenciesPath.node.properties.push(
-							T.ObjectProperty(
-								T.StringLiteral(depPath),
-								T.StringLiteral(depName)
-							)
-						);
-
-						// add named parameter
-						defFuncPath.node.params.push(T.Identifier(depName));
-
-						// add re-export assignment statement to function body
-						returnObjectContents.push(
-							T.ObjectProperty(
-								T.Identifier(depName),
-								T.Identifier(depName),
-								/*computed=*/false,
-								/*shorthand=*/true
-							)
-						);
+					// name-based dependency specifier?
+					if (resKey.startsWith(":::")) {
+						depPathStr = resKey.slice(3);
 					}
+					// otherwise, assume path-based dependency specifier
+					else {
+						// NOTE: resKey here is a root-relative path
+						depPathStr = resKey;
+						depPathStr = addRelativeCurrentDir(depPathStr);
+						// rename source file .cjs extension (per config)
+						depPathStr = renameCJS(config,depPathStr);
+					}
+
+					// track which known dependencies from the map we've
+					// actually referenced
+					refDeps[depPathStr] = depPathStr;
+
+					// add dependency entry
+					dependenciesPath.node.properties.push(
+						T.ObjectProperty(
+							T.StringLiteral(depPathStr),
+							T.StringLiteral(depName)
+						)
+					);
+
+					// add named parameter
+					defFuncPath.node.params.push(T.Identifier(depName));
+
+					// add re-export assignment statement to function body
+					returnObjectContents.push(
+						T.ObjectProperty(
+							T.Identifier(depName),
+							T.Identifier(depName),
+							/*computed=*/false,
+							/*shorthand=*/true
+						)
+					);
 				}
 
 				// return substitute module-exports target
@@ -358,22 +494,35 @@ function index(config,umdBuilds,depMap) {
 		}
 	});
 
-	return { ...generate(umdAST), ast: umdAST, refDeps: depMap, pathStr: modulePathStr, name: moduleName, };
+	return {
+		autoGenerated: true,
+		...generate(umdAST),
+		ast: umdAST,
+		depMap,
+		refDeps,
+		pathStr: indexPathStr,
+		origPathStr: indexPathStr,
+		name: indexName,
+	};
 }
 
-function sortDependencies(umdBuilds) {
+function sortDependencies(config,umdBuilds) {
+	// filter out auto-generated builds (like index)
+	umdBuilds = umdBuilds.filter(umd => !umd.autoGenerated);
+
 	// map of module paths to the builds
-	var depMap = {};
+	var buildMap = {};
 	for (let umd of umdBuilds) {
-		depMap[umd.pathStr] = umd;
+		buildMap[umd.pathStr] = umd;
 	}
 
 	// construct graph edges (dependency relationships)
 	var depsGraph = [];
 	for (let umd of umdBuilds) {
 		for (let refDepPath of Object.keys(umd.refDeps)) {
-			if (refDepPath in depMap) {
-				depsGraph.push([ umd, depMap[refDepPath], ]);
+			refDepPath = renameCJS(config,refDepPath);
+			if (refDepPath in buildMap) {
+				depsGraph.push([ umd, buildMap[refDepPath], ]);
 			}
 		}
 	}

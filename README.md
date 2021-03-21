@@ -74,6 +74,69 @@ Both `require(..)` calls and `module.exports` must also be at the top level scop
 
 For more details on limitations, please see the [Conversion Guide](./conversion-guide.md#whats-not-supported).
 
+## Dependency Map
+
+The dependency-map is **required** configuration for the UMD build, as it maps a specifier path (like `src/whatever/something.js`) to a lexical variable name in the UMD build format (like `Something` or `MyModule`). It also serves as a validation check, as by default dependencies encountered that are not in the dependency-map are treated as "unknown" and result in a fatal error.
+
+If the [`ignoreUnknownDependency` configuration setting](#configuration-settings) is set, these errors will be suppressed, and Moduloze will auto-generate names (like `Mz_34281238375`) for these unknown dependencies. For most environments, this shouldn't break the code, but for the browser usage of the UMD build, where global variables are registered, these auto-generated dependency names are unpredictable/unreliable and will thus be essentially inaccessible to the rest of your application. As such, you should try to avoid relying on auto-naming of unknown dependencies.
+
+Consider a module like this:
+
+```js
+var Something = require("./whatever/something.js");
+var Another = require("./another/index.js");
+
+// ..
+```
+
+A suggested dependency-map registering this module's dependencies might look like:
+
+```js
+{
+    "whatever/something.js": "Something",
+    "another/index.js": "Another"
+}
+```
+
+The leading `./` in the paths in your Node code does not need to be included in the dependency-map entries, as it's assumed to be relative to the root *from* path you specifiy when running Moduloze. Including the unnecessary `./` in dependency-map entries is allowed, but discouraged.
+
+The names (`Something` or `Another`, above) in the dependency map must be unique, and must be suitable as lexical identifiers (aka, variables) -- so no spaces or punctuation!
+
+The names specified are arbitrary, and not particularly relevant outside of your built modules, *except* when being used in the browser environment with the UMD format. In that case, those names indicate the global variables registered for your modules; so, the choices there matter to other parts of your application if they rely on being able to access these built modules.
+
+### External Dependencies
+
+If a module requires one or more external dependencies (not handled by Moduloze) -- for example, built-in Node packages like `fs` or npm-installed packages like `lodash`, these will by default be treated as "unknown dependencies".
+
+It's strongly recommended **not** to rely on auto-naming of external dependencies via the [`ignoreUnknownDependency` configuration setting](#configuration-settings). The built code may still work correctly, it might behave in unexpected ways depending on the conditions in how the code is run.
+
+The more preferred way to handle external dependencies is to affirmatively list them in the [dependency-map configuration setting](#configuration-settings), using a special `:::` prefix on the key (specifier path).
+
+For example, consider this module:
+
+```js
+var fs = require("fs");
+var lodash = require("lodash");
+
+var myModule = require("./src/my-module.js");
+
+// ..
+```
+
+The suggested dependency-map would be:
+
+```js
+{
+    ":::fs": "NodeFS",
+    ":::lodash": "LoDash",
+    "src/my-module.js": "MyModule"
+}
+```
+
+The `:::` prefix tells Moduloze not to apply path semantics to these specifiers, and to leave them as-is in the built modules. That allows you to ensure those external dependencies are otherwise provided in the target environment (via the indicated specifier or name), even though not handled by Moduloze.
+
+Again, the choice of names (like `"NodeFS"` and `"LoDash"` above) are arbitrary -- except of course they still need to be unique and also suitable as lexical variables.
+
 ## CLI
 
 To use the CLI:
@@ -147,9 +210,13 @@ The return value from `build(..)` is an object containing properties correspondi
 
 * `ast` (*string*): the Babylon parser's AST (node tree object)
 
+* `depMap` (*object*): the `depMap` as passed into `build(..)`; may have been modified to include discovered resources/dependencies
+
 * `refDeps` (*object*): map of dependencies actually encountered in the file (same structure as `depMap` parameter above)
 
-* `pathStr`: (*string*): the resolved/normalized path for the source module
+* `pathStr`: (*string*): the resolved/normalized (and potentially renamed) path for the source module
+
+* `origPathStr`: (*string*): same as `pathStr` but without the renaming that may have occurred as a result of [`.mjs` or `.cjs` configuration settings](#configuration-settings)
 
 * `name` (*string*): the local/common name of the module (from the `depMap`, or auto-generated if unknown)
 
@@ -159,7 +226,7 @@ Example usage:
 var fs = require("fs");
 var { build } = require("moduloze");
 
-var srcPath = "./src/whatever.js";
+var srcPath = "src/whatever.js";
 var moduleContents = fs.readFileSync(srcPath,{ encoding: "utf-8" });
 
 var config = {
@@ -168,8 +235,8 @@ var config = {
 };
 
 var depMap = {
-    "./src/whatever.js": "Whatever",
-    "./src/another.js": "Another"
+    "src/whatever.js": "Whatever",
+    "src/another.js": "Another"
 };
 
 var { umd, esm } = build(
