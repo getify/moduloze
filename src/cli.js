@@ -314,7 +314,7 @@ function checkArgsAndConfig() {
 		}
 	}
 
-	// dependency map specified?
+	// dependency map unspecified?
 	if (!config.depMap) {
 		// path is invalid?
 		if (!checkPath(config.depMapPath)) {
@@ -339,8 +339,13 @@ function checkArgsAndConfig() {
 				// need to find config in a package.json?
 				if (/package\.json$/.test(config.depMapPath)) {
 					json = json["mz-dependencies"];
-					// "mz-config" key is missing or not an object?
-					if (!json || typeof json != "object") {
+					if (
+						// "mz-config" key is missing or not an object?
+						(!json || typeof json != "object") &&
+
+						// UMD build format (requires a dependency-map)?
+						config.buildUMD
+					) {
 						throw true;
 					}
 				}
