@@ -1,5 +1,9 @@
 # Moduloze
 
+[![npm Module](https://badge.fury.io/js/moduloze.svg)](https://www.npmjs.org/package/moduloze)
+[![Modules](https://img.shields.io/badge/modules-ESM%2BUMD%2BCJS-a1356a)](https://nodejs.org/api/packages.html#dual-commonjses-module-packages)
+[![License](https://img.shields.io/badge/license-MIT-a1356a)](LICENSE.txt)
+
 Convert CommonJS (CJS) modules to UMD and ESM formats.
 
 ## Overview
@@ -139,6 +143,8 @@ Again, the choice of names (like `"NodeFS"` and `"LoDash"` above) are arbitrary 
 
 ## CLI
 
+[![npm Module](https://badge.fury.io/js/moduloze.svg)](https://www.npmjs.org/package/moduloze)
+
 To use the CLI:
 
 ```cmd
@@ -177,6 +183,9 @@ The CLI tool will also read the following settings from the current process envi
 * `DEPMAPPATH`: corresponds to the `--dep-map` parameter (see above)
 
 ## Library
+
+[![npm Module](https://badge.fury.io/js/moduloze.svg)](https://www.npmjs.org/package/moduloze)
+[![Modules](https://img.shields.io/badge/modules-ESM%2BUMD%2BCJS-a1356a)](https://nodejs.org/api/packages.html#dual-commonjses-module-packages)
 
 To use the library directly in code, instead of as a CLI tool:
 
@@ -316,5 +325,7 @@ The configuration object (either in a JSON file like `.mzrc` or passed into the 
 * `generateIndex` *boolean*: for each build format, generates the "index.js" equivalent roll-up that "imports and re-exports" all source modules
 
 ## License
+
+[![License](https://img.shields.io/badge/license-MIT-a1356a)](LICENSE.txt)
 
 All code and documentation are (c) 2021 Kyle Simpson and released under the [MIT License](http://getify.mit-license.org/). A copy of the MIT License [is also included](LICENSE.txt).
